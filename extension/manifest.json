@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Similar Profiles Scraper",
+  "version": "1.0.0",
+  "description": "Captures similar profiles data from LinkedIn",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://www.linkedin.com/*", "http://localhost:3847/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content-isolated.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LinkedIn Scraper"
+  }
+}
