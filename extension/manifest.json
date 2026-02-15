@@ -5,6 +5,9 @@
   "description": "Captures similar profiles data from LinkedIn",
   "permissions": ["activeTab", "storage"],
   "host_permissions": ["https://www.linkedin.com/*", "http://localhost:3847/*"],
+  "externally_connectable": {
+    "matches": ["http://localhost:5173/*"]
+  },
   "background": {
     "service_worker": "background.js"
   },
@@ -20,6 +23,11 @@
       "js": ["content-isolated.js"],
       "run_at": "document_start",
       "world": "ISOLATED"
+    },
+    {
+      "matches": ["http://localhost:5173/*"],
+      "js": ["content-auth.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

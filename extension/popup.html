@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <style>
       body {
-        width: 280px;
+        width: 300px;
         padding: 16px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         margin: 0;
@@ -47,16 +47,100 @@
       .status-dot.offline {
         background: #dc3545;
       }
+      .status-dot.warning {
+        background: #ffc107;
+      }
       .instructions {
         margin-top: 12px;
         font-size: 11px;
         color: #888;
         line-height: 1.4;
       }
+
+      /* Auth styles */
+      .auth-section {
+        margin-bottom: 12px;
+        padding: 12px;
+        background: #f9fafb;
+        border-radius: 8px;
+      }
+      .auth-section.logged-in {
+        background: #e8f5e9;
+      }
+      .user-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .user-email {
+        font-size: 13px;
+        font-weight: 500;
+        color: #333;
+      }
+      .org-name {
+        font-size: 11px;
+        color: #666;
+      }
+      .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: 500;
+        text-align: center;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 8px;
+      }
+      .btn-primary {
+        background: #0a66c2;
+        color: white;
+      }
+      .btn-primary:hover {
+        background: #004182;
+      }
+      .btn-secondary {
+        background: #e8e8e8;
+        color: #333;
+      }
+      .btn-secondary:hover {
+        background: #d0d0d0;
+      }
+      .hidden {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <h1>LinkedIn Similar Profiles</h1>
+
+    <!-- Auth section - logged out -->
+    <div id="auth-logged-out" class="auth-section">
+      <div class="stat-label">Not Connected</div>
+      <p style="font-size: 12px; color: #666; margin: 8px 0;">
+        Login to start capturing LinkedIn profiles to your workspace.
+      </p>
+      <button id="login-btn" class="btn btn-primary">Login</button>
+
+      <!-- Token paste fallback -->
+      <div id="token-paste-section" class="hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
+        <p style="font-size: 11px; color: #666; margin: 0 0 8px 0;">
+          Or paste your token from the web app:
+        </p>
+        <input type="text" id="token-input" placeholder="Paste token here..." style="width: 100%; padding: 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+        <button id="save-token-btn" class="btn btn-secondary" style="margin-top: 6px;">Save Token</button>
+      </div>
+    </div>
+
+    <!-- Auth section - logged in -->
+    <div id="auth-logged-in" class="auth-section logged-in hidden">
+      <div class="user-info">
+        <span class="user-email" id="user-email">user@example.com</span>
+        <span class="org-name" id="org-name">Organization Name</span>
+      </div>
+      <button id="logout-btn" class="btn btn-secondary">Logout</button>
+    </div>
 
     <div class="stat">
       <div class="stat-label">Profiles in Database</div>

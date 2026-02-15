@@ -14,6 +14,8 @@ export interface Profile {
   notes: string | null;
   tags: string[] | null;
   status: 'new' | 'contacted' | 'replied' | 'qualified' | 'disqualified';
+  organization_id: string | null;
+  created_by_user_id: string | null;
 }
 
 // WorkOS User type
@@ -23,6 +25,34 @@ export interface User {
   firstName: string | null;
   lastName: string | null;
   profilePictureUrl: string | null;
+  currentOrganizationId?: string | null;
+}
+
+// Organization types
+export interface Organization {
+  id: string;
+  name: string;
+  createdAt: Date;
+}
+
+export interface OrganizationMember {
+  userId: string;
+  organizationId: string;
+  role: 'admin' | 'member';
+  joinedAt: Date;
+  user?: User;
+}
+
+export interface OrganizationWithRole extends Organization {
+  role: 'admin' | 'member';
+}
+
+// Extension auth response
+export interface ExtensionAuthResponse {
+  token: string;
+  user: User;
+  organization: Organization | null;
+  expiresAt: number;
 }
 
 // API Request types
@@ -79,4 +109,18 @@ export interface StatsResponse {
 
 export interface AuthResponse {
   user: User;
+  organizations?: OrganizationWithRole[];
+}
+
+export interface SelectOrganizationRequest {
+  organizationId: string;
+}
+
+export interface CreateOrganizationRequest {
+  name: string;
+}
+
+export interface InviteMemberRequest {
+  email: string;
+  role?: 'admin' | 'member';
 }

@@ -1,4 +1,4 @@
-import { Router, type Router as RouterType } from 'express';
+import { Elysia, t } from 'elysia';
 import {
   insertProfiles,
   getProfileCount,
@@ -8,76 +8,104 @@ import {
   getAllTags,
   exportProfiles,
 } from '../db.js';
-import { withAuth } from '../middleware/auth.js';
-import type { Profile, ProfilesQuery } from '@saban/shared';
+import { requireAuth } from '../middleware/auth.js';
+import type { ProfilesQuery } from '@saban/shared';
 
-const router: RouterType = Router();
-
-// Public endpoint for extension compatibility
-router.post('/', async (req, res) => {
-  try {
-    const { profiles, sourceProfileUrl, sourceSection } = req.body;
-
-    if (!profiles || !Array.isArray(profiles)) {
-      res.status(400).json({ success: false, error: 'profiles array required' });
-      return;
-    }
-
-    const inserted = await insertProfiles(profiles, sourceProfileUrl, sourceSection);
-    const total = await getProfileCount();
-
-    console.log(`Inserted ${inserted} profiles from ${sourceProfileUrl}. Total: ${total}`);
-
-    res.json({ success: true, inserted, total });
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
+function escapeCSV(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
   }
-});
+  return value;
+}
 
-// Protected endpoints
-router.get('/', withAuth, async (req, res) => {
-  try {
-    const query: ProfilesQuery = {
-      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
-      search: req.query.search as string | undefined,
-      status: req.query.status as Profile['status'] | undefined,
-      tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
-      sortBy: req.query.sortBy as ProfilesQuery['sortBy'],
-      sortOrder: req.query.sortOrder as ProfilesQuery['sortOrder'],
+export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
+  .use(requireAuth)
+  .post(
+    '/',
+    async ({ body, user, organizationId, set }) => {
+      const { profiles, sourceProfileUrl, sourceSection } = body;
+
+      if (!profiles || !Array.isArray(profiles)) {
+        set.status = 400;
+        return { success: false, error: 'profiles array required' };
+      }
+
+      if (!organizationId) {
+        set.status = 403;
+        return {
+          success: false,
+          error: 'No organization selected. Please authenticate with an organization.',
+        };
+      }
+
+      const inserted = await insertProfiles(
+        profiles,
+        sourceProfileUrl,
+        sourceSection,
+        organizationId,
+        user!.id
+      );
+      const total = await getProfileCount(organizationId);
+
+      console.log(
+        `Inserted ${inserted} profiles from ${sourceProfileUrl} for org ${organizationId}. Total: ${total}`
+      );
+
+      return { success: true, inserted, total };
+    },
+    {
+      body: t.Object({
+        profiles: t.Array(
+          t.Object({
+            profileUrl: t.String(),
+            vanityName: t.Optional(t.String()),
+            firstName: t.Optional(t.String()),
+            lastName: t.Optional(t.String()),
+            memberUrn: t.Optional(t.String()),
+            profilePicturePayload: t.Optional(t.String()),
+            raw: t.Optional(t.Any()),
+          })
+        ),
+        sourceProfileUrl: t.String(),
+        sourceSection: t.String(),
+      }),
+    }
+  )
+  .get('/', async ({ query, organizationId }) => {
+    const profilesQuery: ProfilesQuery = {
+      page: query.page ? parseInt(query.page as string, 10) : 1,
+      limit: query.limit ? parseInt(query.limit as string, 10) : 50,
+      search: query.search as string | undefined,
+      status: query.status as ProfilesQuery['status'],
+      tags: query.tags ? (query.tags as string).split(',') : undefined,
+      sortBy: query.sortBy as ProfilesQuery['sortBy'],
+      sortOrder: query.sortOrder as ProfilesQuery['sortOrder'],
     };
 
-    const { profiles, total } = await getProfiles(query);
-    const totalPages = Math.ceil(total / (query.limit || 50));
+    const { profiles, total } = await getProfiles(profilesQuery, organizationId);
+    const totalPages = Math.ceil(total / (profilesQuery.limit || 50));
 
-    res.json({
+    return {
       success: true,
       data: {
         items: profiles,
         total,
-        page: query.page || 1,
-        limit: query.limit || 50,
+        page: profilesQuery.page || 1,
+        limit: profilesQuery.limit || 50,
         totalPages,
       },
-    });
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
-  }
-});
-
-router.get('/export', withAuth, async (req, res) => {
-  try {
-    const query = {
-      search: req.query.search as string | undefined,
-      status: req.query.status as Profile['status'] | undefined,
-      tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
-      sortBy: req.query.sortBy as ProfilesQuery['sortBy'],
-      sortOrder: req.query.sortOrder as ProfilesQuery['sortOrder'],
+    };
+  })
+  .get('/export', async ({ query, organizationId, set }) => {
+    const exportQuery = {
+      search: query.search as string | undefined,
+      status: query.status as ProfilesQuery['status'],
+      tags: query.tags ? (query.tags as string).split(',') : undefined,
+      sortBy: query.sortBy as ProfilesQuery['sortBy'],
+      sortOrder: query.sortOrder as ProfilesQuery['sortOrder'],
     };
 
-    const profiles = await exportProfiles(query);
+    const profiles = await exportProfiles(exportQuery, organizationId);
 
     const headers = [
       'id',
@@ -110,66 +138,53 @@ router.get('/export', withAuth, async (req, res) => {
       csvRows.push(row.join(','));
     }
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=leads-export.csv');
-    res.send(csvRows.join('\n'));
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
-  }
-});
-
-router.get('/tags', withAuth, async (_req, res) => {
-  try {
-    const tags = await getAllTags();
-    res.json({ success: true, data: tags });
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
-  }
-});
-
-router.get('/:id', withAuth, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    const profile = await getProfileById(id);
+    set.headers['Content-Type'] = 'text/csv';
+    set.headers['Content-Disposition'] = 'attachment; filename=leads-export.csv';
+    return csvRows.join('\n');
+  })
+  .get('/tags', async ({ organizationId }) => {
+    const tags = await getAllTags(organizationId);
+    return { success: true, data: tags };
+  })
+  .get('/:id', async ({ params, organizationId, set }) => {
+    const id = parseInt(params.id, 10);
+    const profile = await getProfileById(id, organizationId);
 
     if (!profile) {
-      res.status(404).json({ success: false, error: 'Profile not found' });
-      return;
+      set.status = 404;
+      return { success: false, error: 'Profile not found' };
     }
 
-    res.json({ success: true, data: profile });
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
-  }
-});
+    return { success: true, data: profile };
+  })
+  .patch(
+    '/:id',
+    async ({ params, body, organizationId, set }) => {
+      const id = parseInt(params.id, 10);
+      const { notes, tags, status } = body;
 
-router.patch('/:id', withAuth, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    const { notes, tags, status } = req.body;
+      const profile = await updateProfile(id, { notes, tags, status }, organizationId);
 
-    const profile = await updateProfile(id, { notes, tags, status });
+      if (!profile) {
+        set.status = 404;
+        return { success: false, error: 'Profile not found' };
+      }
 
-    if (!profile) {
-      res.status(404).json({ success: false, error: 'Profile not found' });
-      return;
+      return { success: true, data: profile };
+    },
+    {
+      body: t.Object({
+        notes: t.Optional(t.String()),
+        tags: t.Optional(t.Array(t.String())),
+        status: t.Optional(
+          t.Union([
+            t.Literal('new'),
+            t.Literal('contacted'),
+            t.Literal('replied'),
+            t.Literal('qualified'),
+            t.Literal('disqualified'),
+          ])
+        ),
+      }),
     }
-
-    res.json({ success: true, data: profile });
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ success: false, error: (err as Error).message });
-  }
-});
-
-function escapeCSV(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-export default router;
+  );

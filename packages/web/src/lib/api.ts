@@ -4,6 +4,12 @@ import type {
   ProfilesResponse,
   UpdateProfileRequest,
   User,
+  Organization,
+  OrganizationWithRole,
+  OrganizationMember,
+  ExtensionAuthResponse,
+  CreateOrganizationRequest,
+  InviteMemberRequest,
 } from '@saban/shared';
 
 const API_BASE = '/api';
@@ -33,12 +39,20 @@ async function fetchApi<T>(
   return res.json();
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+// ==================== AUTH ====================
+
+export interface AuthMeResponse {
+  user: User;
+  organizations: OrganizationWithRole[];
+  currentOrganization: Organization | null;
+}
+
+export async function getCurrentUser(): Promise<AuthMeResponse | null> {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'include' });
     if (!res.ok) return null;
     const data = await res.json();
-    return data.data?.user || null;
+    return data.data || null;
   } catch {
     return null;
   }
@@ -47,6 +61,73 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function logout(): Promise<void> {
   await fetchApi('/auth/logout', { method: 'POST' });
 }
+
+export async function selectOrganization(organizationId: string): Promise<{ organization: Organization }> {
+  const res = await fetchApi<{ success: boolean; data: { organization: Organization } }>(
+    '/auth/select-organization',
+    {
+      method: 'POST',
+      body: JSON.stringify({ organizationId }),
+    }
+  );
+  return res.data;
+}
+
+export async function getExtensionToken(): Promise<ExtensionAuthResponse> {
+  const res = await fetchApi<{ success: boolean; data: ExtensionAuthResponse }>(
+    '/auth/extension-token'
+  );
+  return res.data;
+}
+
+// ==================== ORGANIZATIONS ====================
+
+export async function createOrganization(data: CreateOrganizationRequest): Promise<Organization> {
+  const res = await fetchApi<{ success: boolean; data: Organization }>('/organizations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function getOrganizations(): Promise<OrganizationWithRole[]> {
+  const res = await fetchApi<{ success: boolean; data: OrganizationWithRole[] }>('/organizations');
+  return res.data;
+}
+
+export async function getOrganization(id: string): Promise<Organization> {
+  const res = await fetchApi<{ success: boolean; data: Organization }>(`/organizations/${id}`);
+  return res.data;
+}
+
+export async function getOrganizationMembers(id: string): Promise<OrganizationMember[]> {
+  const res = await fetchApi<{ success: boolean; data: OrganizationMember[] }>(
+    `/organizations/${id}/members`
+  );
+  return res.data;
+}
+
+export async function inviteOrganizationMember(
+  orgId: string,
+  data: InviteMemberRequest
+): Promise<{ id: string; email: string; state: string; expiresAt: string }> {
+  const res = await fetchApi<{
+    success: boolean;
+    data: { id: string; email: string; state: string; expiresAt: string };
+  }>(`/organizations/${orgId}/invitations`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function removeOrganizationMember(orgId: string, userId: string): Promise<void> {
+  await fetchApi(`/organizations/${orgId}/members/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ==================== PROFILES ====================
 
 export async function getProfiles(query: ProfilesQuery): Promise<ProfilesResponse> {
   const params = new URLSearchParams();

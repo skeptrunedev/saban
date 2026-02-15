@@ -21,6 +21,11 @@
     const response = await originalFetch.apply(this, args);
     const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
 
+    // Debug: log all graphql/voyager requests
+    if (url.includes('graphql') || url.includes('voyager')) {
+      console.log('[LinkedIn Scraper] FETCH detected:', url.substring(0, 120));
+    }
+
     const matchedPattern = TARGET_PATTERNS.find(p => url.includes(p));
     if (matchedPattern) {
       try {
@@ -269,11 +274,24 @@
     this.addEventListener('load', function() {
       const url = this._url || '';
 
+      // Debug: log all graphql/voyager XHR requests
+      if (url.includes('graphql') || url.includes('voyager')) {
+        console.log('[LinkedIn Scraper] XHR detected:', url.substring(0, 120));
+        // Check if this is a feed request
+        if (url.includes('paginationToken') || url.includes('FeedDash')) {
+          console.log('[LinkedIn Scraper] XHR FEED URL full:', url);
+          console.log('[LinkedIn Scraper] Contains FEED_PATTERN:', url.includes(FEED_PATTERN));
+        }
+      }
+
       // Check for feed pattern
+      console.log('[LinkedIn Scraper] XHR checking feed pattern:', url.includes(FEED_PATTERN), 'pattern:', FEED_PATTERN);
       if (url.includes(FEED_PATTERN)) {
+        console.log('[LinkedIn Scraper] XHR feed pattern matched! responseType:', this.responseType, 'status:', this.status);
         try {
-          console.log(`[LinkedIn Scraper] XHR Intercepted feed, length: ${this.responseText.length}`);
-          const profiles = extractFeedProfiles(this.responseText);
+          const responseText = this.responseText;
+          console.log(`[LinkedIn Scraper] XHR Intercepted feed, length: ${responseText.length}`);
+          const profiles = extractFeedProfiles(responseText);
           if (profiles.length > 0) {
             console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from feed (XHR)`);
             window.postMessage({
@@ -290,7 +308,9 @@
 
       // Check for profile view patterns
       const profileViewPattern = PROFILE_VIEW_PATTERNS.find(p => url.includes(p));
+      console.log('[LinkedIn Scraper] XHR checking profile view patterns:', profileViewPattern ? profileViewPattern : 'none');
       if (profileViewPattern) {
+        console.log('[LinkedIn Scraper] XHR profile view matched! responseType:', this.responseType, 'status:', this.status);
         try {
           console.log(`[LinkedIn Scraper] XHR Intercepted profile view, length: ${this.responseText.length}`);
           const profile = extractViewedProfile(this.responseText);
