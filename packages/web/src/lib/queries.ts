@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Profile, ProfilesQuery, UpdateProfileRequest, Organization } from '@saban/shared';
+import type { ProfilesQuery, UpdateProfileRequest } from '@saban/shared';
 import {
   getProfiles,
   getProfile,
@@ -96,8 +96,15 @@ export function useInviteMember() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ orgId, email, role }: { orgId: string; email: string; role?: 'admin' | 'member' }) =>
-      inviteOrganizationMember(orgId, { email, role }),
+    mutationFn: ({
+      orgId,
+      email,
+      role,
+    }: {
+      orgId: string;
+      email: string;
+      role?: 'admin' | 'member';
+    }) => inviteOrganizationMember(orgId, { email, role }),
     onSuccess: (_, { orgId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.organizationMembers(orgId) });
     },

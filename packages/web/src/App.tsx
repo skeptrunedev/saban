@@ -18,7 +18,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LogOut, User, Building2, Settings as SettingsIcon, ChevronDown, Check } from 'lucide-react';
+import {
+  LogOut,
+  User,
+  Building2,
+  Settings as SettingsIcon,
+  ChevronDown,
+  Check,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 
 const queryClient = new QueryClient({
@@ -129,7 +136,13 @@ function Layout({ children }: { children: ReactNode }) {
   );
 }
 
-function ProtectedRoute({ children, requireOrg = true }: { children: ReactNode; requireOrg?: boolean }) {
+function ProtectedRoute({
+  children,
+  requireOrg = true,
+}: {
+  children: ReactNode;
+  requireOrg?: boolean;
+}) {
   const { data: authData, isLoading } = useAuthData();
 
   if (isLoading) {
@@ -163,14 +176,8 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
 
       {/* Organization setup routes - don't require org */}
-      <Route
-        path="/organizations/select"
-        element={<OrganizationSelector />}
-      />
-      <Route
-        path="/organizations/new"
-        element={<NewOrganization />}
-      />
+      <Route path="/organizations/select" element={<OrganizationSelector />} />
+      <Route path="/organizations/new" element={<NewOrganization />} />
 
       {/* Extension auth - standalone page */}
       <Route path="/extension-auth" element={<ExtensionAuth />} />

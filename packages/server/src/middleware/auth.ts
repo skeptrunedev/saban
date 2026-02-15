@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
 import * as jose from 'jose';
-import type { User, Organization } from '@saban/shared';
+import type { User } from '@saban/shared';
 
 // JWT secret for extension tokens
 const JWT_SECRET = new TextEncoder().encode(
@@ -77,16 +77,18 @@ function parseExpiry(expiry: string): number {
   const value = parseInt(num, 10);
 
   switch (unit) {
-    case 'd': return value * 24 * 60 * 60;
-    case 'h': return value * 60 * 60;
-    case 'm': return value * 60;
-    case 's': return value;
-    default: return 30 * 24 * 60 * 60;
+    case 'd':
+      return value * 24 * 60 * 60;
+    case 'h':
+      return value * 60 * 60;
+    case 'm':
+      return value * 60;
+    case 's':
+      return value;
+    default:
+      return 30 * 24 * 60 * 60;
   }
 }
-
-// Session cookie password
-const COOKIE_PASSWORD = process.env.WORKOS_COOKIE_PASSWORD || 'a-secure-32-character-password!!';
 
 // Simple session encoding/decoding (for cookie storage)
 function encodeSession(data: SessionData): string {
@@ -102,32 +104,30 @@ function decodeSession(encoded: string): SessionData {
 }
 
 // Auth plugin that provides session management and auth checking
-export const authPlugin = new Elysia({ name: 'auth' })
-  .derive({ as: 'global' }, ({ cookie }) => {
-    // Get session from cookie
-    const sessionCookie = cookie.saban_session;
-    const cookieValue = sessionCookie?.value;
-    const session: SessionData = typeof cookieValue === 'string' && cookieValue
-      ? decodeSession(cookieValue)
-      : {};
+export const authPlugin = new Elysia({ name: 'auth' }).derive({ as: 'global' }, ({ cookie }) => {
+  // Get session from cookie
+  const sessionCookie = cookie.saban_session;
+  const cookieValue = sessionCookie?.value;
+  const session: SessionData =
+    typeof cookieValue === 'string' && cookieValue ? decodeSession(cookieValue) : {};
 
-    return {
-      session,
-      saveSession: (data: SessionData) => {
-        cookie.saban_session.set({
-          value: encodeSession(data),
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 60 * 60 * 24 * 30, // 30 days
-          path: '/',
-        });
-      },
-      destroySession: () => {
-        cookie.saban_session.remove();
-      },
-    };
-  });
+  return {
+    session,
+    saveSession: (data: SessionData) => {
+      cookie.saban_session.set({
+        value: encodeSession(data),
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+        path: '/',
+      });
+    },
+    destroySession: () => {
+      cookie.saban_session.remove();
+    },
+  };
+});
 
 // Auth guard plugin - requires authentication
 export const requireAuth = new Elysia({ name: 'requireAuth' })

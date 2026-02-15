@@ -24,7 +24,10 @@ export function FilterPanel({
 }: FilterPanelProps) {
   return (
     <div className="flex gap-4">
-      <Select value={status || 'all'} onValueChange={(v) => onStatusChange(v === 'all' ? '' : v as Profile['status'])}>
+      <Select
+        value={status || 'all'}
+        onValueChange={(v) => onStatusChange(v === 'all' ? '' : (v as Profile['status']))}
+      >
         <SelectTrigger className="w-40">
           <SelectValue placeholder="All Status" />
         </SelectTrigger>

@@ -25,6 +25,10 @@ interface RawProfile {
   firstName?: string;
   lastName?: string;
   memberUrn?: string;
+  headline?: string;
+  profilePictureUrl?: string;
+  location?: string;
+  connectionDegree?: string;
   profilePicturePayload?: string;
   raw?: Record<string, unknown>;
 }
@@ -131,13 +135,15 @@ export async function removeOrganizationMember(
   userId: string,
   organizationId: string
 ): Promise<void> {
-  await pool.query(
-    'DELETE FROM organization_members WHERE user_id = $1 AND organization_id = $2',
-    [userId, organizationId]
-  );
+  await pool.query('DELETE FROM organization_members WHERE user_id = $1 AND organization_id = $2', [
+    userId,
+    organizationId,
+  ]);
 }
 
-export async function getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
+export async function getOrganizationMembers(
+  organizationId: string
+): Promise<OrganizationMember[]> {
   const result = await pool.query(
     `SELECT om.*, u.email, u.first_name, u.last_name, u.profile_picture_url
      FROM organization_members om
@@ -201,8 +207,8 @@ export async function insertProfiles(
       try {
         await client.query(
           `INSERT INTO similar_profiles
-           (source_profile_url, source_section, profile_url, vanity_name, first_name, last_name, member_urn, profile_picture_payload, raw_data, organization_id, created_by_user_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           (source_profile_url, source_section, profile_url, vanity_name, first_name, last_name, member_urn, headline, profile_picture_url, location, connection_degree, profile_picture_payload, raw_data, organization_id, created_by_user_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            ON CONFLICT (source_profile_url, profile_url) DO NOTHING`,
           [
             sourceProfileUrl,
@@ -212,6 +218,10 @@ export async function insertProfiles(
             profile.firstName,
             profile.lastName,
             profile.memberUrn,
+            profile.headline,
+            profile.profilePictureUrl,
+            profile.location,
+            profile.connectionDegree,
             profile.profilePicturePayload,
             JSON.stringify(profile.raw),
             organizationId,

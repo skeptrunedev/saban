@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthData, useSelectOrganization } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
@@ -9,17 +8,14 @@ export function OrganizationSelector() {
   const navigate = useNavigate();
   const { data: authData, isLoading } = useAuthData();
   const selectOrg = useSelectOrganization();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const organizations = authData?.organizations ?? [];
 
   const handleSelect = async (orgId: string) => {
-    setSelectedId(orgId);
     try {
       await selectOrg.mutateAsync(orgId);
       navigate('/');
     } catch (err) {
-      setSelectedId(null);
       console.error('Failed to select organization:', err);
     }
   };

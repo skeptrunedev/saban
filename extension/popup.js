@@ -154,7 +154,7 @@ async function updateStats() {
     } else {
       throw new Error('Backend error');
     }
-  } catch (err) {
+  } catch {
     totalEl.textContent = '--';
     statusDot.classList.add('offline');
     statusDot.classList.remove('warning');

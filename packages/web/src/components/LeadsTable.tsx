@@ -40,19 +40,22 @@ export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTabl
     {
       id: 'avatar',
       header: '',
-      cell: ({ row }) => (
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-          {row.original.profile_picture_payload ? (
-            <img
-              src={row.original.profile_picture_payload}
-              alt=""
-              className="h-10 w-10 rounded-full object-cover"
-            />
-          ) : (
-            <User className="h-5 w-5 text-muted-foreground" />
-          )}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const profileImage = row.original.profile_picture_url || row.original.profile_picture_payload;
+        return (
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+            {profileImage ? (
+              <img
+                src={profileImage}
+                alt=""
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <User className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+        );
+      },
       size: 60,
     },
     {
@@ -75,13 +78,31 @@ export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTabl
           [row.original.first_name, row.original.last_name].filter(Boolean).join(' ') || 'Unknown';
         return (
           <div>
-            <div className="font-medium">{fullName}</div>
-            {row.original.vanity_name && (
-              <div className="text-sm text-muted-foreground">@{row.original.vanity_name}</div>
+            <div className="font-medium flex items-center gap-2">
+              {fullName}
+              {row.original.connection_degree && (
+                <span className="text-xs text-muted-foreground font-normal">
+                  {row.original.connection_degree}
+                </span>
+              )}
+            </div>
+            {row.original.headline && (
+              <div className="text-sm text-muted-foreground truncate max-w-[250px]">
+                {row.original.headline}
+              </div>
             )}
           </div>
         );
       },
+    },
+    {
+      accessorKey: 'location',
+      header: 'Location',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground truncate max-w-[150px] block">
+          {row.original.location || '-'}
+        </span>
+      ),
     },
     {
       accessorKey: 'status',

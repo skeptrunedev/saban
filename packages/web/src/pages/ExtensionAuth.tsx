@@ -12,25 +12,12 @@ export function ExtensionAuth() {
   const navigate = useNavigate();
   const { data: authData, isLoading: authLoading } = useAuthData();
 
-  const [status, setStatus] = useState<'loading' | 'no-org' | 'sending' | 'success' | 'fallback' | 'error'>('loading');
+  const [status, setStatus] = useState<
+    'loading' | 'no-org' | 'sending' | 'success' | 'fallback' | 'error'
+  >('loading');
   const [error, setError] = useState<string | null>(null);
   const [tokenData, setTokenData] = useState<ExtensionAuthResponse | null>(null);
   const [copied, setCopied] = useState(false);
-  const [extensionDetected, setExtensionDetected] = useState(false);
-
-  // Listen for extension detection
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'EXTENSION_INSTALLED') {
-        setExtensionDetected(true);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
   useEffect(() => {
     if (authLoading) return;
 
@@ -155,7 +142,11 @@ export function ExtensionAuth() {
             <Button className="w-full" onClick={() => navigate('/organizations/select')}>
               Select Organization
             </Button>
-            <Button variant="outline" className="w-full" onClick={() => navigate('/organizations/new')}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate('/organizations/new')}
+            >
               Create Organization
             </Button>
           </CardContent>
@@ -236,11 +227,7 @@ export function ExtensionAuth() {
           </div>
 
           <div className="flex gap-2">
-            <Input
-              readOnly
-              value={tokenData?.token || ''}
-              className="font-mono text-xs"
-            />
+            <Input readOnly value={tokenData?.token || ''} className="font-mono text-xs" />
             <Button onClick={handleCopy} variant="outline">
               {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>

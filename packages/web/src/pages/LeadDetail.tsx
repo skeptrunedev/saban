@@ -14,7 +14,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { NotesEditor } from '@/components/NotesEditor';
 import { TagManager } from '@/components/TagManager';
-import { ArrowLeft, ExternalLink, User } from 'lucide-react';
+import { ArrowLeft, ExternalLink, User, MapPin, Link2 } from 'lucide-react';
 
 const statusColors: Record<Profile['status'], string> = {
   new: 'bg-blue-100 text-blue-800',
@@ -60,6 +60,7 @@ export function LeadDetail() {
   }
 
   const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Unknown';
+  const profileImage = profile.profile_picture_url || profile.profile_picture_payload;
 
   return (
     <div className="space-y-6">
@@ -72,32 +73,51 @@ export function LeadDetail() {
         <Card className="md:col-span-2">
           <CardHeader>
             <div className="flex items-start gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                {profile.profile_picture_payload ? (
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-muted">
+                {profileImage ? (
                   <img
-                    src={profile.profile_picture_payload}
+                    src={profileImage}
                     alt={fullName}
-                    className="h-16 w-16 rounded-full object-cover"
+                    className="h-20 w-20 rounded-full object-cover"
                   />
                 ) : (
-                  <User className="h-8 w-8 text-muted-foreground" />
+                  <User className="h-10 w-10 text-muted-foreground" />
                 )}
               </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
                   <CardTitle className="text-xl">{fullName}</CardTitle>
+                  {profile.connection_degree && (
+                    <span className="text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                      {profile.connection_degree}
+                    </span>
+                  )}
                   <Badge className={statusColors[profile.status || 'new']} variant="secondary">
                     {profile.status || 'new'}
                   </Badge>
                 </div>
-                {profile.vanity_name && (
-                  <p className="text-muted-foreground">@{profile.vanity_name}</p>
+                {profile.headline && (
+                  <p className="text-muted-foreground mt-1">{profile.headline}</p>
                 )}
+                <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
+                  {profile.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-4 w-4" />
+                      {profile.location}
+                    </span>
+                  )}
+                  {profile.vanity_name && (
+                    <span className="flex items-center gap-1">
+                      <Link2 className="h-4 w-4" />
+                      @{profile.vanity_name}
+                    </span>
+                  )}
+                </div>
                 <a
                   href={profile.profile_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center text-sm text-primary hover:underline"
+                  className="mt-3 inline-flex items-center text-sm text-primary hover:underline"
                 >
                   View on LinkedIn
                   <ExternalLink className="ml-1 h-3 w-3" />
@@ -136,6 +156,24 @@ export function LeadDetail() {
             <CardTitle className="text-lg">Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            {profile.headline && (
+              <div>
+                <p className="font-medium text-muted-foreground">Headline</p>
+                <p>{profile.headline}</p>
+              </div>
+            )}
+            {profile.location && (
+              <div>
+                <p className="font-medium text-muted-foreground">Location</p>
+                <p>{profile.location}</p>
+              </div>
+            )}
+            {profile.connection_degree && (
+              <div>
+                <p className="font-medium text-muted-foreground">Connection</p>
+                <p>{profile.connection_degree}</p>
+              </div>
+            )}
             <div>
               <p className="font-medium text-muted-foreground">Source</p>
               <p className="truncate">{profile.source_profile_url || 'N/A'}</p>
@@ -151,7 +189,7 @@ export function LeadDetail() {
             {profile.member_urn && (
               <div>
                 <p className="font-medium text-muted-foreground">Member URN</p>
-                <p className="font-mono text-xs">{profile.member_urn}</p>
+                <p className="font-mono text-xs break-all">{profile.member_urn}</p>
               </div>
             )}
           </CardContent>

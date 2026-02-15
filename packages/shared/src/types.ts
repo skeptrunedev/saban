@@ -8,6 +8,10 @@ export interface Profile {
   first_name: string | null;
   last_name: string | null;
   member_urn: string | null;
+  headline: string | null;
+  profile_picture_url: string | null;
+  location: string | null;
+  connection_degree: string | null;
   profile_picture_payload: string | null;
   raw_data: Record<string, unknown> | null;
   captured_at: Date;
@@ -63,6 +67,10 @@ export interface CreateProfilesRequest {
     firstName?: string;
     lastName?: string;
     memberUrn?: string;
+    headline?: string;
+    profilePictureUrl?: string;
+    location?: string;
+    connectionDegree?: string;
     profilePicturePayload?: string;
     raw?: Record<string, unknown>;
   }>;
@@ -101,7 +109,7 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
-export interface ProfilesResponse extends PaginatedResponse<Profile> {}
+export type ProfilesResponse = PaginatedResponse<Profile>;
 
 export interface StatsResponse {
   total: number;

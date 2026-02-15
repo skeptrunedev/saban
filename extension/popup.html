@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <meta charset="UTF-8" />
@@ -118,18 +118,36 @@
     <!-- Auth section - logged out -->
     <div id="auth-logged-out" class="auth-section">
       <div class="stat-label">Not Connected</div>
-      <p style="font-size: 12px; color: #666; margin: 8px 0;">
+      <p style="font-size: 12px; color: #666; margin: 8px 0">
         Login to start capturing LinkedIn profiles to your workspace.
       </p>
       <button id="login-btn" class="btn btn-primary">Login</button>
 
       <!-- Token paste fallback -->
-      <div id="token-paste-section" class="hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
-        <p style="font-size: 11px; color: #666; margin: 0 0 8px 0;">
+      <div
+        id="token-paste-section"
+        class="hidden"
+        style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0"
+      >
+        <p style="font-size: 11px; color: #666; margin: 0 0 8px 0">
           Or paste your token from the web app:
         </p>
-        <input type="text" id="token-input" placeholder="Paste token here..." style="width: 100%; padding: 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
-        <button id="save-token-btn" class="btn btn-secondary" style="margin-top: 6px;">Save Token</button>
+        <input
+          type="text"
+          id="token-input"
+          placeholder="Paste token here..."
+          style="
+            width: 100%;
+            padding: 8px;
+            font-size: 11px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+          "
+        />
+        <button id="save-token-btn" class="btn btn-secondary" style="margin-top: 6px">
+          Save Token
+        </button>
       </div>
     </div>
 

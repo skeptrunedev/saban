@@ -16,7 +16,7 @@ import { requireAuth } from './middleware/auth.js';
 
 const PORT = process.env.PORT || 3847;
 
-const app = new Elysia()
+new Elysia()
   .use(
     swagger({
       documentation: {
@@ -85,7 +85,7 @@ const app = new Elysia()
       }),
     }
   )
-  .get('/stats', async ({ user, organizationId }) => {
+  .get('/stats', async ({ organizationId }) => {
     const total = await getProfileCount(organizationId);
     return { total };
   })

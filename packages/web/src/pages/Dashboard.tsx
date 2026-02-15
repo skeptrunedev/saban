@@ -72,9 +72,7 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold">Leads</h1>
           <p className="text-muted-foreground">
             {total} total leads
-            {isFetching && !isLoading && (
-              <span className="ml-2 text-xs">(updating...)</span>
-            )}
+            {isFetching && !isLoading && <span className="ml-2 text-xs">(updating...)</span>}
           </p>
         </div>
         <ExportButton

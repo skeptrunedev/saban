@@ -149,12 +149,8 @@ export function Settings() {
               </Button>
             </form>
 
-            {inviteError && (
-              <p className="mt-3 text-sm text-destructive">{inviteError}</p>
-            )}
-            {inviteSuccess && (
-              <p className="mt-3 text-sm text-green-600">{inviteSuccess}</p>
-            )}
+            {inviteError && <p className="mt-3 text-sm text-destructive">{inviteError}</p>}
+            {inviteSuccess && <p className="mt-3 text-sm text-green-600">{inviteSuccess}</p>}
           </CardContent>
         </Card>
       )}

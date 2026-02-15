@@ -93,14 +93,17 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
   if (message.type === 'AUTH_TOKEN') {
     // Store auth data from web app
-    chrome.storage.local.set({
-      authToken: message.token,
-      user: message.user,
-      organization: message.organization,
-    }, () => {
-      console.log('[Background] Auth token saved');
-      sendResponse({ success: true });
-    });
+    chrome.storage.local.set(
+      {
+        authToken: message.token,
+        user: message.user,
+        organization: message.organization,
+      },
+      () => {
+        console.log('[Background] Auth token saved');
+        sendResponse({ success: true });
+      }
+    );
     return true;
   }
 

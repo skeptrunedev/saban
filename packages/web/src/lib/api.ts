@@ -14,10 +14,7 @@ import type {
 
 const API_BASE = '/api';
 
-async function fetchApi<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
+async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     credentials: 'include',
@@ -62,7 +59,9 @@ export async function logout(): Promise<void> {
   await fetchApi('/auth/logout', { method: 'POST' });
 }
 
-export async function selectOrganization(organizationId: string): Promise<{ organization: Organization }> {
+export async function selectOrganization(
+  organizationId: string
+): Promise<{ organization: Organization }> {
   const res = await fetchApi<{ success: boolean; data: { organization: Organization } }>(
     '/auth/select-organization',
     {
@@ -150,10 +149,7 @@ export async function getProfile(id: number): Promise<Profile> {
   return res.data;
 }
 
-export async function updateProfile(
-  id: number,
-  updates: UpdateProfileRequest
-): Promise<Profile> {
+export async function updateProfile(id: number, updates: UpdateProfileRequest): Promise<Profile> {
   const res = await fetchApi<{ success: boolean; data: Profile }>(`/profiles/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
