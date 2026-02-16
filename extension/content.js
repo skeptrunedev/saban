@@ -24,9 +24,25 @@
     const response = await originalFetch.apply(this, args);
     const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
 
-    // Debug: log all graphql/voyager requests
+    // Debug: log all graphql/voyager requests and check for profile data
     if (url.includes('graphql') || url.includes('voyager')) {
       console.log('[LinkedIn Scraper] FETCH detected:', url.substring(0, 120));
+
+      // Check if response contains profile data with occupation/headline
+      try {
+        const debugClone = response.clone();
+        const debugText = await debugClone.text();
+        const hasOccupation = debugText.includes('"occupation"');
+        const hasHeadline = debugText.includes('"headline"');
+        const hasFirstName = (debugText.match(/"firstName":"[A-Z]/g) || []).length;
+
+        if (hasFirstName > 0 && (hasOccupation || hasHeadline)) {
+          console.log(`[LinkedIn Scraper] *** FOUND PROFILE DATA *** URL: ${url.substring(0, 100)}`);
+          console.log(`[LinkedIn Scraper]   firstNames: ${hasFirstName}, hasOccupation: ${hasOccupation}, hasHeadline: ${hasHeadline}`);
+        }
+      } catch (e) {
+        // Ignore debug errors
+      }
     }
 
     const matchedPattern = TARGET_PATTERNS.find((p) => url.includes(p));
@@ -142,9 +158,66 @@
     return response;
   };
 
+  // Build a map of publicIdentifier/vanityName -> profile data from entire response
+  function buildProfileDataMap(text) {
+    const map = {};
+
+    // Find all fsd_profile or profile entities with occupation/headline
+    // Pattern: publicIdentifier near occupation
+    const profileBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,800}?"occupation":"([^"]+)"/g);
+    for (const match of profileBlocks) {
+      const publicId = match[1];
+      const occupation = match[2];
+      if (!map[publicId]) map[publicId] = {};
+      map[publicId].headline = occupation;
+    }
+
+    // Also try reverse order (occupation before publicIdentifier)
+    const reverseBlocks = text.matchAll(/"occupation":"([^"]+)"[^}]{0,800}?"publicIdentifier":"([^"]+)"/g);
+    for (const match of reverseBlocks) {
+      const occupation = match[1];
+      const publicId = match[2];
+      if (!map[publicId]) map[publicId] = {};
+      map[publicId].headline = occupation;
+    }
+
+    // Find headline field
+    const headlineBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,500}?"headline":"([^"]+)"/g);
+    for (const match of headlineBlocks) {
+      const publicId = match[1];
+      const headline = match[2];
+      if (!map[publicId]) map[publicId] = {};
+      if (!map[publicId].headline) map[publicId].headline = headline;
+    }
+
+    // Find geoLocationName
+    const locationBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,500}?"geoLocationName":"([^"]+)"/g);
+    for (const match of locationBlocks) {
+      const publicId = match[1];
+      const location = match[2];
+      if (!map[publicId]) map[publicId] = {};
+      map[publicId].location = location;
+    }
+
+    // Find profile picture rootUrl near publicIdentifier
+    const pictureBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,1000}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/g);
+    for (const match of pictureBlocks) {
+      const publicId = match[1];
+      const pictureUrl = match[2];
+      if (!map[publicId]) map[publicId] = {};
+      map[publicId].profilePictureUrl = pictureUrl;
+    }
+
+    console.log('[LinkedIn Scraper] Built profile data map with', Object.keys(map).length, 'entries');
+    return map;
+  }
+
   function extractProfiles(text) {
     const profiles = [];
     const seen = new Set();
+
+    // Build a map of publicIdentifier -> profile data from the entire response
+    const profileDataMap = buildProfileDataMap(text);
 
     // First, try to match profiles with firstName/lastName
     const blockRegex =
@@ -162,31 +235,34 @@
       const vanityName = extractVanityName(profileUrl);
       const memberUrn = extractMemberUrn(text, match.index);
 
-      // Get additional context around this match for extra fields
+      // Look up additional data from the map
+      const extraData = profileDataMap[vanityName] || {};
+
+      // Get additional context around this match for extra fields (fallback)
       const context = text.slice(Math.max(0, match.index - 500), match.index + 2000);
 
-      // Extract headline
-      const headlineMatch = context.match(/"headline":"([^"]+)"/) ||
-                           context.match(/"tagline":"([^"]+)"/) ||
-                           context.match(/"occupation":"([^"]+)"/);
-      const headline = headlineMatch ? headlineMatch[1] : null;
+      // Extract headline - prefer map data, then context
+      const headline = extraData.headline ||
+                      (context.match(/"headline":"([^"]+)"/) ||
+                       context.match(/"tagline":"([^"]+)"/) ||
+                       context.match(/"occupation":"([^"]+)"/))?.[ 1] || null;
 
       // Extract profile picture URL
-      const pictureMatch = context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
-                          context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
-                          context.match(/"image"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
-      const profilePictureUrl = pictureMatch ? pictureMatch[1] : null;
+      const profilePictureUrl = extraData.profilePictureUrl ||
+                               (context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
+                                context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
+                                context.match(/"image"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/))?.[ 1] || null;
 
       // Extract location
-      const locationMatch = context.match(/"locationName":"([^"]+)"/) ||
-                           context.match(/"geoLocationName":"([^"]+)"/);
-      const location = locationMatch ? locationMatch[1] : null;
+      const location = extraData.location ||
+                      (context.match(/"locationName":"([^"]+)"/) ||
+                       context.match(/"geoLocationName":"([^"]+)"/))?.[ 1] || null;
 
       // Extract connection degree
-      const degreeMatch = context.match(/"distance":\{"value":"([^"]+)"\}/) ||
-                         context.match(/"degree":(\d)/) ||
-                         context.match(/"connectionDegree":"([^"]+)"/);
-      const connectionDegree = degreeMatch ? degreeMatch[1] : null;
+      const connectionDegree = extraData.connectionDegree ||
+                              (context.match(/"distance":\{"value":"([^"]+)"\}/) ||
+                               context.match(/"degree":(\d)/) ||
+                               context.match(/"connectionDegree":"([^"]+)"/))?.[ 1] || null;
 
       profiles.push({
         firstName,
@@ -202,7 +278,7 @@
         raw: { firstName, lastName, vanityName, profileUrl, memberUrn, headline, profilePictureUrl, location, connectionDegree },
       });
       console.log(
-        `[LinkedIn Scraper] Extracted (with name): ${firstName} ${lastName} - ${profileUrl}`
+        `[LinkedIn Scraper] Extracted (with name): ${firstName} ${lastName} - ${profileUrl} - headline: ${headline}`
       );
     }
 
