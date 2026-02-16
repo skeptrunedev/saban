@@ -14,17 +14,35 @@ interface BrightDataRawProfile {
   about?: string;
   connections?: number;
   followers?: number;
+  current_company?: {
+    name?: string;
+    link?: string;
+    location?: string;
+    company_id?: string;
+  };
+  current_company_name?: string;
   experience?: Array<{
     title?: string;
     company?: string;
     start_date?: string;
     end_date?: string;
     duration?: string;
+    description?: string;
+    location?: string;
+    positions?: Array<{
+      title?: string;
+      start_date?: string;
+      end_date?: string;
+      description?: string;
+    }>;
   }>;
   education?: Array<{
     school?: string;
+    title?: string; // BrightData uses 'title' for school name sometimes
     degree?: string;
     field_of_study?: string;
+    start_year?: string;
+    end_year?: string;
   }>;
   skills?: string[];
   certifications?: Array<{
@@ -34,6 +52,18 @@ interface BrightDataRawProfile {
   languages?: Array<{
     language?: string;
     proficiency?: string;
+  }>;
+  activity?: Array<{
+    title?: string;
+    link?: string;
+  }>;
+  honors_and_awards?: Array<{
+    title?: string;
+    issuer?: string;
+  }>;
+  publications?: Array<{
+    title?: string;
+    publisher?: string;
   }>;
 }
 
@@ -147,6 +177,12 @@ function buildProfileSummary(profile: BrightDataRawProfile): string {
   lines.push(`**Connections:** ${profile.connections?.toLocaleString() || 'Unknown'}`);
   lines.push(`**Followers:** ${profile.followers?.toLocaleString() || 'Unknown'}`);
 
+  // Include current company info (often available even when full experience isn't)
+  const currentCompany = profile.current_company_name || profile.current_company?.name;
+  if (currentCompany) {
+    lines.push(`**Current Company:** ${currentCompany}`);
+  }
+
   if (profile.about) {
     lines.push(
       `\n**About:**\n${profile.about.substring(0, 500)}${profile.about.length > 500 ? '...' : ''}`
@@ -159,15 +195,29 @@ function buildProfileSummary(profile: BrightDataRawProfile): string {
       const duration = exp.duration || '';
       const dates = exp.start_date ? `(${exp.start_date} - ${exp.end_date || 'Present'})` : '';
       lines.push(`- ${exp.title} at ${exp.company} ${dates} ${duration}`);
+      // Include nested positions if available (BrightData sometimes nests role changes)
+      if (exp.positions && exp.positions.length > 0) {
+        for (const pos of exp.positions.slice(0, 3)) {
+          const posDates = pos.start_date
+            ? `(${pos.start_date} - ${pos.end_date || 'Present'})`
+            : '';
+          lines.push(`  - ${pos.title} ${posDates}`);
+        }
+      }
     }
   }
 
   if (profile.education && profile.education.length > 0) {
     lines.push('\n**Education:**');
     for (const edu of profile.education.slice(0, 3)) {
+      const school = edu.school || edu.title; // BrightData uses 'title' sometimes
       const degree = edu.degree ? `${edu.degree}` : '';
       const field = edu.field_of_study ? ` in ${edu.field_of_study}` : '';
-      lines.push(`- ${edu.school}${degree ? `: ${degree}${field}` : ''}`);
+      const years =
+        edu.start_year || edu.end_year
+          ? ` (${edu.start_year || '?'} - ${edu.end_year || '?'})`
+          : '';
+      lines.push(`- ${school}${degree ? `: ${degree}${field}` : ''}${years}`);
     }
   }
 
@@ -188,6 +238,23 @@ function buildProfileSummary(profile: BrightDataRawProfile): string {
     lines.push(
       `\n**Languages:** ${profile.languages.map((l) => `${l.language}${l.proficiency ? ` (${l.proficiency})` : ''}`).join(', ')}`
     );
+  }
+
+  if (profile.honors_and_awards && profile.honors_and_awards.length > 0) {
+    lines.push(
+      `\n**Honors & Awards:** ${profile.honors_and_awards
+        .slice(0, 5)
+        .map((h) => h.title)
+        .join(', ')}`
+    );
+  }
+
+  if (profile.publications && profile.publications.length > 0) {
+    lines.push(`\n**Publications:** ${profile.publications.length} publication(s)`);
+  }
+
+  if (profile.activity && profile.activity.length > 0) {
+    lines.push(`\n**Recent Activity:** ${profile.activity.length} recent post(s)/article(s)`);
   }
 
   return lines.join('\n');
