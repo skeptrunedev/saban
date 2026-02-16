@@ -4,17 +4,20 @@ import { ServerClient } from './server-client';
 
 export default {
   /**
-   * Cron handler - runs every minute to check R2 for new BrightData results
+   * Cron handler - runs every minute to:
+   * 1. Process any BrightData results in R2
+   * 2. Trigger scrapes for unenriched profiles
    */
   async scheduled(
     _event: ScheduledEvent,
     env: Env,
     _ctx: ExecutionContext
   ): Promise<void> {
-    console.log('Cron: Starting R2 scan for BrightData results');
+    console.log('Cron: Starting scheduled tasks');
     const serverClient = new ServerClient(env);
 
-    // List all files in the R2 bucket
+    // Step 1: Process R2 results
+    console.log('Cron: Checking R2 for BrightData results');
     const listed = await env.BRIGHTDATA_RESULTS.list();
     console.log(`Cron: Found ${listed.objects.length} files in R2`);
 
@@ -39,7 +42,16 @@ export default {
       }
     }
 
-    console.log('Cron: Finished R2 scan');
+    // Step 2: Trigger scrapes for unenriched profiles
+    console.log('Cron: Triggering scrapes for unenriched profiles');
+    try {
+      const result = await serverClient.triggerUnenrichedScrapes(50);
+      console.log(`Cron: Scrape trigger result: ${result.triggered} profiles, snapshotId=${result.snapshotId || 'none'}`);
+    } catch (error) {
+      console.error('Cron: Error triggering scrapes:', error);
+    }
+
+    console.log('Cron: Finished scheduled tasks');
   },
 
   /**
@@ -54,7 +66,7 @@ export default {
       });
     }
 
-    // Manual trigger for testing
+    // Manual trigger for processing R2 results
     if (url.pathname === '/trigger') {
       const serverClient = new ServerClient(env);
       const listed = await env.BRIGHTDATA_RESULTS.list();
@@ -75,6 +87,22 @@ export default {
       return new Response(JSON.stringify({ processed: results }), {
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    // Manual trigger for scraping unenriched profiles
+    if (url.pathname === '/trigger-scrape') {
+      const serverClient = new ServerClient(env);
+      try {
+        const result = await serverClient.triggerUnenrichedScrapes(50);
+        return new Response(JSON.stringify({ success: true, ...result }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ success: false, error: String(error) }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     return new Response('Not found', { status: 404 });

@@ -74,4 +74,28 @@ export class ServerClient {
       }),
     });
   }
+
+  /**
+   * Get URLs of profiles that haven't been enriched yet
+   */
+  async getUnenrichedProfileUrls(limit: number = 50): Promise<string[]> {
+    const result = await this.fetch<{ urls: string[]; count: number }>(
+      `/api/internal/enrichment/pending?limit=${limit}`
+    );
+    return result.urls;
+  }
+
+  /**
+   * Trigger BrightData scrapes for unenriched profiles
+   * Server will get pending URLs and trigger the scrape
+   */
+  async triggerUnenrichedScrapes(limit: number = 50): Promise<{ triggered: number; snapshotId?: string }> {
+    return this.fetch<{ triggered: number; snapshotId?: string; message: string }>(
+      '/api/internal/enrichment/trigger-scrape',
+      {
+        method: 'POST',
+        body: JSON.stringify({ limit }),
+      }
+    );
+  }
 }

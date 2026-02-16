@@ -203,6 +203,36 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
     const profiles = await getAllPendingScoring();
     return { success: true, data: profiles };
   })
+  // Get unenriched profile URLs (for periodic scraping worker)
+  .get('/enrichment/pending', async ({ query }) => {
+    const limit = query.limit ? parseInt(query.limit as string, 10) : 50;
+    const urls = await getUnenrichedProfileUrls(limit);
+    return { success: true, data: { urls, count: urls.length } };
+  })
+  // Trigger scrapes for unenriched profiles (called by worker cron)
+  .post(
+    '/enrichment/trigger-scrape',
+    async ({ body }) => {
+      const limit = body.limit || 50;
+      const result = await triggerUnenrichedScrapes(limit);
+      return {
+        success: true,
+        data: {
+          triggered: result.triggered,
+          snapshotId: result.snapshotId,
+          message:
+            result.triggered > 0
+              ? `Triggered scrape for ${result.triggered} profiles`
+              : 'No unenriched profiles to scrape',
+        },
+      };
+    },
+    {
+      body: t.Object({
+        limit: t.Optional(t.Number()),
+      }),
+    }
+  )
   // Get qualification by ID (for worker to fetch criteria)
   .get('/qualifications/:id', async ({ params, set }) => {
     const id = parseInt(params.id, 10);
@@ -299,4 +329,48 @@ async function getQualificationByIdInternal(id: number) {
     name: row.name,
     criteria: row.criteria,
   };
+}
+
+// Get unenriched profile URLs for periodic scraping
+async function getUnenrichedProfileUrls(limit: number = 50): Promise<string[]> {
+  const result = await pool.query(
+    `SELECT profile_url FROM (
+       SELECT DISTINCT ON (sp.profile_url) sp.profile_url, sp.captured_at
+       FROM similar_profiles sp
+       LEFT JOIN profile_enrichments pe ON sp.id = pe.profile_id
+       WHERE pe.id IS NULL
+         AND sp.organization_id IS NOT NULL
+         AND sp.vanity_name IS NOT NULL
+         AND sp.vanity_name NOT LIKE 'ACo%'
+       ORDER BY sp.profile_url, sp.captured_at DESC
+     ) sub
+     ORDER BY captured_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows.map((row) => row.profile_url);
+}
+
+// Trigger scrapes for unenriched profiles
+import { triggerScrape, isBrightDataConfigured } from '../services/brightdata.js';
+
+async function triggerUnenrichedScrapes(
+  limit: number = 50
+): Promise<{ triggered: number; snapshotId?: string }> {
+  if (!isBrightDataConfigured()) {
+    console.log('[Internal] BrightData not configured, skipping scrape trigger');
+    return { triggered: 0 };
+  }
+
+  const urls = await getUnenrichedProfileUrls(limit);
+
+  if (urls.length === 0) {
+    console.log('[Internal] No unenriched profiles to scrape');
+    return { triggered: 0 };
+  }
+
+  console.log(`[Internal] Triggering scrape for ${urls.length} unenriched profiles`);
+  const snapshotId = await triggerScrape(urls);
+
+  return { triggered: urls.length, snapshotId };
 }
