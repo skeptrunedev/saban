@@ -128,6 +128,7 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
     }
   )
   // Store enrichment data by vanity name (for cron worker)
+  // Auto-scores the profile against all qualifications in its organization
   .post(
     '/enrichments/by-vanity',
     async ({ body, set }) => {
@@ -161,7 +162,26 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
         return { success: false, error: `No profile found with vanity name: ${vanityName}` };
       }
 
-      return { success: true, data: { profilesUpdated: result.profilesUpdated } };
+      // Auto-score against all qualifications if we have rawResponse
+      let scoringResult = { profilesScored: 0, totalScored: 0, totalFailed: 0 };
+      if (rawResponse) {
+        console.log(`[Enrichment] Auto-scoring profiles for vanity: ${vanityName}`);
+        scoringResult = await scoreProfilesByVanityAgainstAllQualifications(
+          vanityName,
+          rawResponse as Record<string, unknown>
+        );
+        console.log(
+          `[Enrichment] Scored ${scoringResult.totalScored} qualifications for ${scoringResult.profilesScored} profiles`
+        );
+      }
+
+      return {
+        success: true,
+        data: {
+          profilesUpdated: result.profilesUpdated,
+          scoring: scoringResult,
+        },
+      };
     },
     {
       body: t.Object({
@@ -203,6 +223,78 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
     const profiles = await getAllPendingScoring();
     return { success: true, data: profiles };
   })
+  // Score all pending profiles against all their org's qualifications
+  .post(
+    '/scoring/run',
+    async ({ body }) => {
+      const limit = body?.limit || 50;
+
+      // Get all enriched profiles that need scoring
+      const pendingProfiles = await getAllPendingScoring();
+
+      if (pendingProfiles.length === 0) {
+        return {
+          success: true,
+          data: { message: 'No profiles pending scoring', scored: 0, failed: 0 },
+        };
+      }
+
+      // Limit how many we process
+      const toProcess = pendingProfiles.slice(0, limit);
+      console.log(`[Scoring] Processing ${toProcess.length} pending profile-qualification pairs`);
+
+      let scored = 0;
+      let failed = 0;
+
+      for (const {
+        profileId,
+        qualificationId,
+        qualificationName,
+        criteria,
+        rawResponse,
+      } of toProcess) {
+        try {
+          const result = await scoreProfileWithAI(rawResponse as any, criteria);
+
+          await upsertQualificationResult(
+            profileId,
+            qualificationId,
+            result.score,
+            result.reasoning,
+            result.passed
+          );
+
+          console.log(
+            `[Scoring] Profile ${profileId} vs "${qualificationName}": score=${result.score}, passed=${result.passed}`
+          );
+          scored++;
+        } catch (err) {
+          console.error(
+            `[Scoring] Failed to score profile ${profileId} against qualification ${qualificationId}:`,
+            err
+          );
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `Scored ${scored} profile-qualification pairs`,
+          scored,
+          failed,
+          remaining: pendingProfiles.length - toProcess.length,
+        },
+      };
+    },
+    {
+      body: t.Optional(
+        t.Object({
+          limit: t.Optional(t.Number()),
+        })
+      ),
+    }
+  )
   // Get unenriched profile URLs (for periodic scraping worker)
   .get('/enrichment/pending', async ({ query }) => {
     const limit = query.limit ? parseInt(query.limit as string, 10) : 50;
@@ -373,4 +465,115 @@ async function triggerUnenrichedScrapes(
   const snapshotId = await triggerScrape(urls);
 
   return { triggered: urls.length, snapshotId };
+}
+
+// Score a profile against all qualifications in its organization
+async function scoreProfileAgainstAllQualifications(
+  profileId: number,
+  rawResponse: Record<string, unknown>
+): Promise<{
+  scored: number;
+  failed: number;
+  results: Array<{
+    qualificationId: number;
+    qualificationName: string;
+    score: number;
+    passed: boolean;
+  }>;
+}> {
+  // Get the profile's organization
+  const profileResult = await pool.query(
+    `SELECT organization_id FROM similar_profiles WHERE id = $1`,
+    [profileId]
+  );
+
+  if (profileResult.rows.length === 0 || !profileResult.rows[0].organization_id) {
+    console.log(`[Scoring] Profile ${profileId} has no organization, skipping scoring`);
+    return { scored: 0, failed: 0, results: [] };
+  }
+
+  const organizationId = profileResult.rows[0].organization_id;
+
+  // Get all qualifications for this organization
+  const qualificationsResult = await pool.query(
+    `SELECT id, name, criteria FROM job_qualifications WHERE organization_id = $1`,
+    [organizationId]
+  );
+
+  if (qualificationsResult.rows.length === 0) {
+    console.log(`[Scoring] No qualifications found for organization ${organizationId}`);
+    return { scored: 0, failed: 0, results: [] };
+  }
+
+  console.log(
+    `[Scoring] Scoring profile ${profileId} against ${qualificationsResult.rows.length} qualifications`
+  );
+
+  let scored = 0;
+  let failed = 0;
+  const results: Array<{
+    qualificationId: number;
+    qualificationName: string;
+    score: number;
+    passed: boolean;
+  }> = [];
+
+  for (const qualification of qualificationsResult.rows) {
+    try {
+      const result = await scoreProfileWithAI(rawResponse as any, qualification.criteria);
+
+      await upsertQualificationResult(
+        profileId,
+        qualification.id,
+        result.score,
+        result.reasoning,
+        result.passed
+      );
+
+      console.log(
+        `[Scoring] Profile ${profileId} vs "${qualification.name}": score=${result.score}, passed=${result.passed}`
+      );
+      scored++;
+      results.push({
+        qualificationId: qualification.id,
+        qualificationName: qualification.name,
+        score: result.score,
+        passed: result.passed,
+      });
+    } catch (err) {
+      console.error(
+        `[Scoring] Failed to score profile ${profileId} against qualification ${qualification.id}:`,
+        err
+      );
+      failed++;
+    }
+  }
+
+  return { scored, failed, results };
+}
+
+// Score profiles by vanity name against all qualifications
+async function scoreProfilesByVanityAgainstAllQualifications(
+  vanityName: string,
+  rawResponse: Record<string, unknown>
+): Promise<{ profilesScored: number; totalScored: number; totalFailed: number }> {
+  // Find all profiles with this vanity name
+  const profileResult = await pool.query(`SELECT id FROM similar_profiles WHERE vanity_name = $1`, [
+    vanityName.toLowerCase(),
+  ]);
+
+  if (profileResult.rows.length === 0) {
+    return { profilesScored: 0, totalScored: 0, totalFailed: 0 };
+  }
+
+  let totalScored = 0;
+  let totalFailed = 0;
+
+  for (const row of profileResult.rows) {
+    const result = await scoreProfileAgainstAllQualifications(row.id, rawResponse);
+    totalScored += result.scored;
+    totalFailed += result.failed;
+  }
+
+  return { profilesScored: profileResult.rows.length, totalScored, totalFailed };
 }

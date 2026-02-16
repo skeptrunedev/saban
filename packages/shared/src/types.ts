@@ -99,6 +99,8 @@ export interface ProfilesQuery {
 export interface ProfileWithScore extends Profile {
   best_score: number | null;
   best_score_passed: boolean | null;
+  best_qualification_id: number | null;
+  best_qualification_name: string | null;
   is_enriched: boolean;
 }
 

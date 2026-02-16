@@ -395,7 +395,52 @@ export function LeadDetail() {
           <CardContent>
             {qualificationResults && qualificationResults.length > 0 ? (
               <div className="space-y-3">
-                {qualificationResults.map((result) => (
+                {/* Best Match Summary */}
+                {(() => {
+                  const bestResult = qualificationResults.reduce((best, current) =>
+                    current.score > (best?.score ?? -1) ? current : best
+                  , qualificationResults[0]);
+
+                  return bestResult && (
+                    <div className={`rounded-lg border-2 p-4 ${
+                      bestResult.passed
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-amber-400 bg-amber-50'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sparkles className="h-4 w-4 text-amber-500" />
+                        <span className="text-sm font-medium text-muted-foreground">Best Match</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {bestResult.passed ? (
+                            <CheckCircle className="h-6 w-6 text-green-600" />
+                          ) : (
+                            <XCircle className="h-6 w-6 text-red-600" />
+                          )}
+                          <span className="font-semibold text-lg">
+                            {bestResult.qualification?.name || 'Unknown'}
+                          </span>
+                        </div>
+                        <div
+                          className={`text-3xl font-bold ${
+                            bestResult.passed ? 'text-green-600' : 'text-red-600'
+                          }`}
+                        >
+                          {bestResult.score}%
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* All Scores */}
+                {qualificationResults.length > 1 && (
+                  <p className="text-sm font-medium text-muted-foreground pt-2">All Scores</p>
+                )}
+                {qualificationResults
+                  .sort((a, b) => b.score - a.score)
+                  .map((result) => (
                   <div
                     key={result.id}
                     className={`rounded-lg border p-4 ${
@@ -418,7 +463,7 @@ export function LeadDetail() {
                           result.passed ? 'text-green-600' : 'text-red-600'
                         }`}
                       >
-                        {result.score}/100
+                        {result.score}%
                       </div>
                     </div>
                     {result.reasoning && (
@@ -435,7 +480,7 @@ export function LeadDetail() {
                 <p className="text-sm text-muted-foreground mb-2">No qualification scores yet</p>
                 <p className="text-xs text-muted-foreground">
                   {qualifications && qualifications.length > 0
-                    ? 'Select a qualification to score this profile'
+                    ? 'Scores are automatically calculated when the profile is enriched'
                     : 'Create a job qualification first to score leads'}
                 </p>
                 {(!qualifications || qualifications.length === 0) && (

@@ -98,4 +98,18 @@ export class ServerClient {
       }
     );
   }
+
+  /**
+   * Run scoring for all pending profile-qualification pairs
+   * This handles new qualifications being scored against existing enriched profiles
+   */
+  async runPendingScoring(limit: number = 50): Promise<{ scored: number; failed: number; remaining: number }> {
+    return this.fetch<{ scored: number; failed: number; remaining: number; message: string }>(
+      '/api/internal/scoring/run',
+      {
+        method: 'POST',
+        body: JSON.stringify({ limit }),
+      }
+    );
+  }
 }

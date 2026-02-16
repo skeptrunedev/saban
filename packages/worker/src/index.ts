@@ -51,6 +51,15 @@ export default {
       console.error('Cron: Error triggering scrapes:', error);
     }
 
+    // Step 3: Run pending scoring (for new qualifications against existing profiles)
+    console.log('Cron: Running pending scoring');
+    try {
+      const result = await serverClient.runPendingScoring(50);
+      console.log(`Cron: Scoring result: ${result.scored} scored, ${result.failed} failed, ${result.remaining} remaining`);
+    } catch (error) {
+      console.error('Cron: Error running scoring:', error);
+    }
+
     console.log('Cron: Finished scheduled tasks');
   },
 
@@ -94,6 +103,22 @@ export default {
       const serverClient = new ServerClient(env);
       try {
         const result = await serverClient.triggerUnenrichedScrapes(50);
+        return new Response(JSON.stringify({ success: true, ...result }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ success: false, error: String(error) }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // Manual trigger for running pending scoring
+    if (url.pathname === '/trigger-scoring') {
+      const serverClient = new ServerClient(env);
+      try {
+        const result = await serverClient.runPendingScoring(100);
         return new Response(JSON.stringify({ success: true, ...result }), {
           headers: { 'Content-Type': 'application/json' },
         });

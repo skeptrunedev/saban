@@ -363,19 +363,23 @@ export async function getProfiles(
   let scoreSubquery: string;
   if (qualificationId) {
     scoreSubquery = `
-      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed
+      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+             jq.id as best_qualification_id, jq.name as best_qualification_name
       FROM qualification_results qr
+      JOIN job_qualifications jq ON qr.qualification_id = jq.id
       WHERE qr.qualification_id = $${paramIndex}
     `;
     params.push(qualificationId);
     paramIndex++;
   } else {
-    // Get the best (highest) score across all qualifications
+    // Get the best (highest) score across all qualifications with qualification info
     scoreSubquery = `
-      SELECT qr.profile_id, MAX(qr.score) as best_score,
-             bool_or(qr.passed) as best_score_passed
+      SELECT DISTINCT ON (qr.profile_id)
+             qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+             jq.id as best_qualification_id, jq.name as best_qualification_name
       FROM qualification_results qr
-      GROUP BY qr.profile_id
+      JOIN job_qualifications jq ON qr.qualification_id = jq.id
+      ORDER BY qr.profile_id, qr.score DESC
     `;
   }
 
@@ -397,6 +401,7 @@ export async function getProfiles(
 
   const result = await pool.query(
     `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            scores.best_qualification_id, scores.best_qualification_name,
             (pe.id IS NOT NULL) as is_enriched
      FROM similar_profiles sp
      LEFT JOIN (${scoreSubquery}) scores ON sp.id = scores.profile_id
@@ -534,18 +539,22 @@ export async function exportProfiles(
   let scoreSubquery: string;
   if (qualificationId) {
     scoreSubquery = `
-      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed
+      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+             jq.id as best_qualification_id, jq.name as best_qualification_name
       FROM qualification_results qr
+      JOIN job_qualifications jq ON qr.qualification_id = jq.id
       WHERE qr.qualification_id = $${paramIndex}
     `;
     params.push(qualificationId);
     paramIndex++;
   } else {
     scoreSubquery = `
-      SELECT qr.profile_id, MAX(qr.score) as best_score,
-             bool_or(qr.passed) as best_score_passed
+      SELECT DISTINCT ON (qr.profile_id)
+             qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+             jq.id as best_qualification_id, jq.name as best_qualification_name
       FROM qualification_results qr
-      GROUP BY qr.profile_id
+      JOIN job_qualifications jq ON qr.qualification_id = jq.id
+      ORDER BY qr.profile_id, qr.score DESC
     `;
   }
 
@@ -556,7 +565,8 @@ export async function exportProfiles(
   const sortColumn = safeSortBy === 'best_score' ? 'scores.best_score' : `sp.${safeSortBy}`;
 
   const result = await pool.query(
-    `SELECT sp.*, scores.best_score, scores.best_score_passed
+    `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            scores.best_qualification_id, scores.best_qualification_name
      FROM similar_profiles sp
      LEFT JOIN (${scoreSubquery}) scores ON sp.id = scores.profile_id
      ${whereClause}

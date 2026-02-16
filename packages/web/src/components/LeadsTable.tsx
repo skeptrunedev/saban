@@ -245,32 +245,40 @@ export function LeadsTable({
       accessorKey: 'best_score',
       header: () => (
         <Button variant="ghost" onClick={() => handleSortToggle('best_score')}>
-          Score
+          Best Match
           {getSortIcon('best_score')}
         </Button>
       ),
       cell: ({ row }) => {
         const score = row.original.best_score;
         const passed = row.original.best_score_passed;
+        const qualificationName = row.original.best_qualification_name;
 
         if (score === null || score === undefined) {
           return <span className="text-muted-foreground text-sm">-</span>;
         }
 
         return (
-          <div className="flex items-center gap-1.5">
-            {passed ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-500" />
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              {passed ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-500" />
+              )}
+              <span className={`font-medium ${passed ? 'text-green-600' : 'text-red-500'}`}>
+                {score}%
+              </span>
+            </div>
+            {qualificationName && (
+              <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                {qualificationName}
+              </span>
             )}
-            <span className={`font-medium ${passed ? 'text-green-600' : 'text-red-500'}`}>
-              {score}
-            </span>
           </div>
         );
       },
-      size: 80,
+      size: 140,
     },
     {
       accessorKey: 'captured_at',
