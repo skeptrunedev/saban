@@ -14,8 +14,8 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">LinkedIn Leads</CardTitle>
-          <CardDescription>Sign in to manage your LinkedIn leads</CardDescription>
+          <CardTitle className="text-2xl">Saban</CardTitle>
+          <CardDescription>Sign in to source LinkedIn candidates</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
