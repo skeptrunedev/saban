@@ -2,10 +2,26 @@ import { Elysia } from 'elysia';
 import * as jose from 'jose';
 import type { User } from '@saban/shared';
 
-// JWT secret for extension tokens
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || process.env.WORKOS_COOKIE_PASSWORD || 'a-secure-32-character-password!!'
-);
+// JWT secret for extension tokens - read lazily to ensure dotenv has loaded
+function getJwtSecret() {
+  return new TextEncoder().encode(
+    process.env.JWT_SECRET || process.env.WORKOS_COOKIE_PASSWORD || 'a-secure-32-character-password!!'
+  );
+}
+
+// Admin API key for testing - read at runtime
+function getAdminApiKey() {
+  return process.env.ADMIN_API_KEY;
+}
+
+// Admin user used when authenticating with admin API key
+const ADMIN_USER: User = {
+  id: 'admin-test-user',
+  email: 'admin@test.local',
+  firstName: 'Admin',
+  lastName: 'Test',
+  profilePictureUrl: null,
+};
 
 // Session data stored in cookies
 export interface SessionData {
@@ -16,7 +32,7 @@ export interface SessionData {
 // Verify JWT token for extension auth
 async function verifyJWT(token: string): Promise<{ user: User; organizationId?: string } | null> {
   try {
-    const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
+    const { payload } = await jose.jwtVerify(token, getJwtSecret(), {
       algorithms: ['HS256'],
     });
 
@@ -64,7 +80,7 @@ export async function generateExtensionToken(
     .setSubject(user.id)
     .setIssuedAt()
     .setExpirationTime(expiresAt)
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 
   return { token, expiresAt };
 }
@@ -114,14 +130,28 @@ export const authPlugin = new Elysia({ name: 'auth' }).derive({ as: 'global' }, 
   return {
     session,
     saveSession: (data: SessionData) => {
-      cookie.saban_session.set({
+      const isProduction = !!process.env.COOKIE_DOMAIN || process.env.NODE_ENV === 'production';
+      const cookieOptions: {
+        value: string;
+        httpOnly: boolean;
+        secure: boolean;
+        sameSite: 'lax';
+        maxAge: number;
+        path: string;
+        domain?: string;
+      } = {
         value: encodeSession(data),
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isProduction,
         sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 30, // 30 days
         path: '/',
-      });
+      };
+      // Set domain for cross-subdomain cookie sharing in production
+      if (process.env.COOKIE_DOMAIN) {
+        cookieOptions.domain = process.env.COOKIE_DOMAIN;
+      }
+      cookie.saban_session.set(cookieOptions);
     },
     destroySession: () => {
       cookie.saban_session.remove();
@@ -132,8 +162,33 @@ export const authPlugin = new Elysia({ name: 'auth' }).derive({ as: 'global' }, 
 // Auth guard plugin - requires authentication
 export const requireAuth = new Elysia({ name: 'requireAuth' })
   .use(authPlugin)
-  .derive({ as: 'global' }, async ({ session, headers }) => {
-    // First, try Bearer token (for extension)
+  .derive({ as: 'global' }, async ({ session, headers, request }) => {
+    // Skip auth for internal API routes (they have their own auth)
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/internal')) {
+      return {
+        user: null as User | null,
+        organizationId: undefined as string | undefined,
+        authError: undefined as string | undefined,
+        skipAuth: true,
+      };
+    }
+
+    // First, check for admin API key (for testing)
+    const adminKey = headers['x-admin-api-key'];
+    const adminApiKey = getAdminApiKey();
+    console.log('[Auth] Admin key check:', { adminKey, expected: adminApiKey, match: adminKey === adminApiKey });
+    if (adminApiKey && adminKey === adminApiKey) {
+      // Get organization ID from header if provided
+      const orgId = headers['x-organization-id'] as string | undefined;
+      return {
+        user: ADMIN_USER,
+        organizationId: orgId,
+        authError: undefined as string | undefined,
+      };
+    }
+
+    // Second, try Bearer token (for extension)
     const authHeader = headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
@@ -170,7 +225,10 @@ export const requireAuth = new Elysia({ name: 'requireAuth' })
       authError: 'Unauthorized',
     };
   })
-  .onBeforeHandle({ as: 'global' }, ({ user, authError, set }) => {
+  .onBeforeHandle({ as: 'global' }, ({ user, authError, skipAuth, set }) => {
+    // Skip auth check for internal routes
+    if (skipAuth) return;
+
     if (!user) {
       set.status = 401;
       return { success: false, error: authError || 'Unauthorized' };

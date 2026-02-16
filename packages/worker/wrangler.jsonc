@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "saban-enrichment-worker",
+  "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Observability
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  },
+
+  // R2 bucket binding for BrightData results
+  "r2_buckets": [
+    {
+      "binding": "BRIGHTDATA_RESULTS",
+      "bucket_name": "saban-brightdata-results"
+    }
+  ],
+
+  // Queue configuration
+  "queues": {
+    "consumers": [
+      {
+        "queue": "saban-enrichment-queue",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "saban-enrichment-dlq"
+      }
+    ]
+  },
+
+  // Environment variables (secrets should be set via wrangler secret)
+  "vars": {
+    "ENVIRONMENT": "production"
+  }
+}

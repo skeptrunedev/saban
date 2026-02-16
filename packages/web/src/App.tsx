@@ -9,6 +9,8 @@ import { Settings } from '@/pages/Settings';
 import { OrganizationSelector } from '@/pages/OrganizationSelector';
 import { NewOrganization } from '@/pages/NewOrganization';
 import { ExtensionAuth } from '@/pages/ExtensionAuth';
+import { Qualifications } from '@/pages/Qualifications';
+import { QualificationDetail } from '@/pages/QualificationDetail';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,6 +27,7 @@ import {
   Settings as SettingsIcon,
   ChevronDown,
   Check,
+  Target,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -112,6 +115,10 @@ function Layout({ children }: { children: ReactNode }) {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Account</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/qualifications')}>
+                    <Target className="mr-2 h-4 w-4" />
+                    Job Qualifications
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/settings')}>
                     <SettingsIcon className="mr-2 h-4 w-4" />
                     Organization Settings
@@ -204,6 +211,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Settings />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/qualifications"
+        element={
+          <ProtectedRoute>
+            <Qualifications />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/qualifications/:id"
+        element={
+          <ProtectedRoute>
+            <QualificationDetail />
           </ProtectedRoute>
         }
       />

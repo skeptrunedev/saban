@@ -1,4 +1,5 @@
 import { Elysia, t } from 'elysia';
+import { randomUUID } from 'crypto';
 import {
   insertProfiles,
   getProfileCount,
@@ -7,8 +8,10 @@ import {
   updateProfile,
   getAllTags,
   exportProfiles,
+  createEnrichmentJob,
 } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { enqueueJob, isQueueConfigured } from '../services/queue.js';
 import type { ProfilesQuery } from '@saban/shared';
 
 function escapeCSV(value: string): string {
@@ -38,7 +41,7 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
         };
       }
 
-      const inserted = await insertProfiles(
+      const { inserted, newProfileIds, newProfileUrls } = await insertProfiles(
         profiles,
         sourceProfileUrl,
         sourceSection,
@@ -50,6 +53,19 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
       console.log(
         `Inserted ${inserted} profiles from ${sourceProfileUrl} for org ${organizationId}. Total: ${total}`
       );
+
+      // Auto-enrich new profiles if queue is configured and we have new profiles
+      if (isQueueConfigured() && newProfileIds.length > 0) {
+        const jobId = randomUUID();
+        await createEnrichmentJob(jobId, newProfileIds, organizationId);
+        await enqueueJob({
+          jobId,
+          profileIds: newProfileIds,
+          profileUrls: newProfileUrls,
+          organizationId,
+        });
+        console.log(`Auto-enrichment job ${jobId} created for ${newProfileIds.length} new profiles`);
+      }
 
       return { success: true, inserted, total };
     },

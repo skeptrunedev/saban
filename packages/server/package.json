@@ -11,9 +11,12 @@
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write src",
-    "format:check": "prettier --check src"
+    "format:check": "prettier --check src",
+    "test": "bun test tests/",
+    "test:watch": "bun test --watch tests/"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@elysiajs/cors": "^1.0.0",
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/swagger": "^1.0.0",

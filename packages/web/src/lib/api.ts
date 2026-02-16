@@ -10,9 +10,15 @@ import type {
   ExtensionAuthResponse,
   CreateOrganizationRequest,
   InviteMemberRequest,
+  JobQualification,
+  CreateQualificationRequest,
+  UpdateQualificationRequest,
+  ProfileEnrichment,
+  QualificationResult,
+  EnrichmentJob,
 } from '@saban/shared';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -171,4 +177,81 @@ export function getExportUrl(query: Omit<ProfilesQuery, 'page' | 'limit'>): stri
   if (query.sortOrder) params.set('sortOrder', query.sortOrder);
 
   return `${API_BASE}/profiles/export?${params.toString()}`;
+}
+
+// ==================== QUALIFICATIONS ====================
+
+export async function getQualifications(): Promise<JobQualification[]> {
+  const res = await fetchApi<{ success: boolean; data: JobQualification[] }>('/qualifications');
+  return res.data;
+}
+
+export async function getQualification(id: number): Promise<JobQualification> {
+  const res = await fetchApi<{ success: boolean; data: JobQualification }>(`/qualifications/${id}`);
+  return res.data;
+}
+
+export async function createQualification(
+  data: CreateQualificationRequest
+): Promise<JobQualification> {
+  const res = await fetchApi<{ success: boolean; data: JobQualification }>('/qualifications', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function updateQualification(
+  id: number,
+  data: UpdateQualificationRequest
+): Promise<JobQualification> {
+  const res = await fetchApi<{ success: boolean; data: JobQualification }>(`/qualifications/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function deleteQualification(id: number): Promise<void> {
+  await fetchApi(`/qualifications/${id}`, { method: 'DELETE' });
+}
+
+// ==================== ENRICHMENT ====================
+
+export async function startEnrichment(
+  profileIds: number[],
+  qualificationId?: number
+): Promise<{ job: EnrichmentJob }> {
+  const res = await fetchApi<{ success: boolean; data: { job: EnrichmentJob } }>(
+    '/enrichment/enrich',
+    {
+      method: 'POST',
+      body: JSON.stringify({ profileIds, qualificationId }),
+    }
+  );
+  return res.data;
+}
+
+export async function getEnrichmentJobs(): Promise<EnrichmentJob[]> {
+  const res = await fetchApi<{ success: boolean; data: EnrichmentJob[] }>('/enrichment/jobs');
+  return res.data;
+}
+
+export async function getEnrichmentJob(id: string): Promise<EnrichmentJob> {
+  const res = await fetchApi<{ success: boolean; data: EnrichmentJob }>(`/enrichment/jobs/${id}`);
+  return res.data;
+}
+
+export async function getProfileEnrichment(profileId: number): Promise<ProfileEnrichment | null> {
+  const res = await fetchApi<{ success: boolean; data: ProfileEnrichment | null }>(
+    `/enrichment/profiles/${profileId}`
+  );
+  return res.data;
+}
+
+export async function getProfileQualifications(profileId: number): Promise<QualificationResult[]> {
+  const res = await fetchApi<{ success: boolean; data: QualificationResult[] }>(
+    `/enrichment/profiles/${profileId}/qualifications`
+  );
+  return res.data;
 }

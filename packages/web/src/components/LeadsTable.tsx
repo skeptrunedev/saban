@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -9,6 +9,7 @@ import {
 import type { Profile, ProfilesQuery } from '@saban/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -17,12 +18,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowUpDown, ExternalLink, User } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User } from 'lucide-react';
+import { parseUTCTimestamp } from '@/lib/utils';
 
 interface LeadsTableProps {
   profiles: Profile[];
   onProfileClick: (profile: Profile) => void;
   onSortChange: (sortBy: ProfilesQuery['sortBy'], sortOrder: ProfilesQuery['sortOrder']) => void;
+  sortBy?: ProfilesQuery['sortBy'];
+  sortOrder?: ProfilesQuery['sortOrder'];
+  selectedIds?: number[];
+  onSelectionChange?: (ids: number[]) => void;
 }
 
 const statusColors: Record<Profile['status'], string> = {
@@ -33,10 +39,89 @@ const statusColors: Record<Profile['status'], string> = {
   disqualified: 'bg-gray-100 text-gray-800',
 };
 
-export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+export function LeadsTable({
+  profiles,
+  onProfileClick,
+  onSortChange,
+  sortBy = 'captured_at',
+  sortOrder = 'desc',
+  selectedIds = [],
+  onSelectionChange,
+}: LeadsTableProps) {
+  // Derive sorting state from props
+  const sorting: SortingState = useMemo(
+    () => (sortBy ? [{ id: sortBy, desc: sortOrder === 'desc' }] : []),
+    [sortBy, sortOrder]
+  );
+
+  const handleSortToggle = (columnId: string) => {
+    const currentSort = sorting.find((s) => s.id === columnId);
+    if (!currentSort) {
+      // Not sorted by this column, sort desc (most recent/Z first)
+      onSortChange(columnId as ProfilesQuery['sortBy'], 'desc');
+    } else if (currentSort.desc) {
+      // Currently desc, switch to asc
+      onSortChange(columnId as ProfilesQuery['sortBy'], 'asc');
+    } else {
+      // Currently asc, switch to desc
+      onSortChange(columnId as ProfilesQuery['sortBy'], 'desc');
+    }
+  };
+
+  const getSortIcon = (columnId: string) => {
+    const currentSort = sorting.find((s) => s.id === columnId);
+    if (!currentSort) return <ArrowUpDown className="ml-2 h-4 w-4" />;
+    if (currentSort.desc) return <ArrowDown className="ml-2 h-4 w-4" />;
+    return <ArrowUp className="ml-2 h-4 w-4" />;
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!onSelectionChange) return;
+    if (checked) {
+      onSelectionChange(profiles.map((p) => p.id));
+    } else {
+      onSelectionChange([]);
+    }
+  };
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    if (!onSelectionChange) return;
+    if (checked) {
+      onSelectionChange([...selectedIds, id]);
+    } else {
+      onSelectionChange(selectedIds.filter((i) => i !== id));
+    }
+  };
+
+  const allSelected = profiles.length > 0 && selectedIds.length === profiles.length;
+  const someSelected = selectedIds.length > 0 && selectedIds.length < profiles.length;
 
   const columns: ColumnDef<Profile>[] = [
+    ...(onSelectionChange
+      ? [
+          {
+            id: 'select',
+            header: () => (
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onCheckedChange={handleSelectAll}
+                aria-label="Select all"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ),
+            cell: ({ row }: { row: { original: Profile } }) => (
+              <Checkbox
+                checked={selectedIds.includes(row.original.id)}
+                onCheckedChange={(checked) => handleSelectOne(row.original.id, checked as boolean)}
+                aria-label="Select row"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ),
+            size: 40,
+          } as ColumnDef<Profile>,
+        ]
+      : []),
     {
       id: 'avatar',
       header: '',
@@ -60,17 +145,10 @@ export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTabl
     },
     {
       accessorKey: 'first_name',
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          onClick={() => {
-            const isAsc = column.getIsSorted() === 'asc';
-            column.toggleSorting(!isAsc);
-            onSortChange('first_name', isAsc ? 'desc' : 'asc');
-          }}
-        >
+      header: () => (
+        <Button variant="ghost" onClick={() => handleSortToggle('first_name')}>
           Name
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          {getSortIcon('first_name')}
         </Button>
       ),
       cell: ({ row }) => {
@@ -133,20 +211,28 @@ export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTabl
     },
     {
       accessorKey: 'captured_at',
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          onClick={() => {
-            const isAsc = column.getIsSorted() === 'asc';
-            column.toggleSorting(!isAsc);
-            onSortChange('captured_at', isAsc ? 'desc' : 'asc');
-          }}
-        >
+      header: () => (
+        <Button variant="ghost" onClick={() => handleSortToggle('captured_at')}>
           Captured
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          {getSortIcon('captured_at')}
         </Button>
       ),
-      cell: ({ row }) => new Date(row.original.captured_at).toLocaleDateString(),
+      cell: ({ row }) => {
+        const date = parseUTCTimestamp(row.original.captured_at);
+        return (
+          <div className="text-sm">
+            <div>{date.toLocaleDateString()}</div>
+            <div className="text-muted-foreground text-xs">
+              {date.toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+              })}
+            </div>
+          </div>
+        );
+      },
     },
     {
       id: 'actions',
@@ -170,7 +256,6 @@ export function LeadsTable({ profiles, onProfileClick, onSortChange }: LeadsTabl
     columns,
     getCoreRowModel: getCoreRowModel(),
     state: { sorting },
-    onSortingChange: setSorting,
     manualSorting: true,
   });
 

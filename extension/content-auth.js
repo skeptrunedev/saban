@@ -6,7 +6,8 @@ console.log('[Extension Auth] Content script loaded on:', window.location.href);
 // Listen for messages from the web app
 window.addEventListener('message', (event) => {
   // Only accept messages from our web app
-  if (event.origin !== 'http://localhost:5173') return;
+  const allowedOrigins = ['http://localhost:5173', 'https://saban.skeptrune.com'];
+  if (!allowedOrigins.includes(event.origin)) return;
 
   if (event.data?.type === 'EXTENSION_AUTH_TOKEN') {
     console.log('[Extension Auth] Received auth token from web app');

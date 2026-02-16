@@ -1,22 +1,55 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useCallback, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Profile, ProfilesQuery } from '@saban/shared';
-import { useProfiles, useTags } from '@/lib/queries';
+import { useProfiles, useTags, useStartEnrichment, useQualifications } from '@/lib/queries';
 import { SearchBar } from '@/components/SearchBar';
 import { FilterPanel } from '@/components/FilterPanel';
 import { LeadsTable } from '@/components/LeadsTable';
 import { ExportButton } from '@/components/ExportButton';
 import { Pagination } from '@/components/Pagination';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Sparkles, ChevronDown, Loader2 } from 'lucide-react';
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<Profile['status'] | ''>('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<ProfilesQuery['sortBy']>('captured_at');
-  const [sortOrder, setSortOrder] = useState<ProfilesQuery['sortOrder']>('desc');
+  // Read state from URL params with defaults
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const search = searchParams.get('search') || '';
+  const status = (searchParams.get('status') as Profile['status'] | '') || '';
+  const selectedTags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+  const sortBy = (searchParams.get('sortBy') as ProfilesQuery['sortBy']) || 'captured_at';
+  const sortOrder = (searchParams.get('sortOrder') as ProfilesQuery['sortOrder']) || 'desc';
+
+  const enrichMutation = useStartEnrichment();
+  const { data: qualifications } = useQualifications();
+
+  // Helper to update URL params
+  const updateParams = useCallback(
+    (updates: Record<string, string | undefined>) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(updates)) {
+          if (value === undefined || value === '' || value === '1' && key === 'page') {
+            next.delete(key);
+          } else {
+            next.set(key, value);
+          }
+        }
+        return next;
+      });
+    },
+    [setSearchParams]
+  );
 
   const query = useMemo<ProfilesQuery>(
     () => ({
@@ -35,18 +68,15 @@ export function Dashboard() {
   const { data: availableTags = [] } = useTags();
 
   const handleSearchChange = (value: string) => {
-    setSearch(value);
-    setPage(1);
+    updateParams({ search: value || undefined, page: '1' });
   };
 
   const handleStatusChange = (value: Profile['status'] | '') => {
-    setStatus(value);
-    setPage(1);
+    updateParams({ status: value || undefined, page: '1' });
   };
 
   const handleTagsChange = (tags: string[]) => {
-    setSelectedTags(tags);
-    setPage(1);
+    updateParams({ tags: tags.length ? tags.join(',') : undefined, page: '1' });
   };
 
   const handleProfileClick = (profile: Profile) => {
@@ -57,8 +87,21 @@ export function Dashboard() {
     newSortBy: ProfilesQuery['sortBy'],
     newSortOrder: ProfilesQuery['sortOrder']
   ) => {
-    setSortBy(newSortBy);
-    setSortOrder(newSortOrder);
+    updateParams({ sortBy: newSortBy, sortOrder: newSortOrder });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    updateParams({ page: String(newPage) });
+  };
+
+  const handleSelectionChange = (ids: number[]) => {
+    setSelectedIds(ids);
+  };
+
+  const handleBulkEnrich = async (qualificationId?: number) => {
+    if (selectedIds.length === 0) return;
+    await enrichMutation.mutateAsync({ profileIds: selectedIds, qualificationId });
+    setSelectedIds([]);
   };
 
   const profiles = data?.items ?? [];
@@ -72,18 +115,60 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold">Leads</h1>
           <p className="text-muted-foreground">
             {total} total leads
+            {selectedIds.length > 0 && (
+              <span className="ml-2 text-primary font-medium">
+                ({selectedIds.length} selected)
+              </span>
+            )}
             {isFetching && !isLoading && <span className="ml-2 text-xs">(updating...)</span>}
           </p>
         </div>
-        <ExportButton
-          query={{
-            search: search || undefined,
-            status: status || undefined,
-            tags: selectedTags.length ? selectedTags : undefined,
-            sortBy,
-            sortOrder,
-          }}
-        />
+        <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={enrichMutation.isPending}>
+                  {enrichMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enriching...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Enrich ({selectedIds.length})
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleBulkEnrich()}>
+                  Enrich only (no scoring)
+                </DropdownMenuItem>
+                {qualifications && qualifications.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {qualifications.map((qual) => (
+                      <DropdownMenuItem key={qual.id} onClick={() => handleBulkEnrich(qual.id)}>
+                        Enrich + Score: {qual.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <ExportButton
+            query={{
+              search: search || undefined,
+              status: status || undefined,
+              tags: selectedTags.length ? selectedTags : undefined,
+              sortBy,
+              sortOrder,
+            }}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
@@ -107,9 +192,13 @@ export function Dashboard() {
             profiles={profiles}
             onProfileClick={handleProfileClick}
             onSortChange={handleSortChange}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            selectedIds={selectedIds}
+            onSelectionChange={handleSelectionChange}
           />
           {totalPages > 1 && (
-            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+            <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
           )}
         </>
       )}

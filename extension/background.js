@@ -1,5 +1,5 @@
 // Background service worker - handles sending data to backend
-const BACKEND_URL = 'http://localhost:3847';
+const BACKEND_URL = 'https://saban-api.skeptrune.com';
 
 let totalCaptured = 0;
 

@@ -27,6 +27,10 @@ function getRedirectUri(): string {
   return process.env.WORKOS_REDIRECT_URI || 'http://localhost:3847/api/auth/callback';
 }
 
+function getFrontendUrl(): string {
+  return process.env.FRONTEND_URL || 'http://localhost:5173';
+}
+
 export const authRoutes = new Elysia({ prefix: '/api/auth' })
   .use(authPlugin)
   .get('/login', ({ redirect }) => {
@@ -41,7 +45,7 @@ export const authRoutes = new Elysia({ prefix: '/api/auth' })
     const code = query.code as string;
 
     if (!code) {
-      return redirect('http://localhost:5173/login?error=no_code');
+      return redirect(`${getFrontendUrl()}/login?error=no_code`);
     }
 
     try {
@@ -98,19 +102,19 @@ export const authRoutes = new Elysia({ prefix: '/api/auth' })
       const userOrgs = await getUserOrganizations(user.id);
 
       if (userOrgs.length === 0) {
-        return redirect('http://localhost:5173/organizations/new');
+        return redirect(`${getFrontendUrl()}/organizations/new`);
       } else if (userOrgs.length === 1 && !organizationId) {
         // Only one org - auto-select it
         saveSession({ user, organizationId: userOrgs[0].id });
-        return redirect('http://localhost:5173/');
+        return redirect(`${getFrontendUrl()}/`);
       } else if (!organizationId) {
-        return redirect('http://localhost:5173/organizations/select');
+        return redirect(`${getFrontendUrl()}/organizations/select`);
       } else {
-        return redirect('http://localhost:5173/');
+        return redirect(`${getFrontendUrl()}/`);
       }
     } catch (error) {
       console.error('Auth callback error:', error);
-      return redirect('http://localhost:5173/login?error=auth_failed');
+      return redirect(`${getFrontendUrl()}/login?error=auth_failed`);
     }
   })
   .post('/logout', ({ destroySession }) => {

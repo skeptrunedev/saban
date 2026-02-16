@@ -11,6 +11,9 @@ import { swagger } from '@elysiajs/swagger';
 import { authRoutes } from './routes/auth.js';
 import { profilesRoutes } from './routes/profiles.js';
 import { organizationsRoutes } from './routes/organizations.js';
+import { qualificationsRoutes } from './routes/qualifications.js';
+import { enrichmentRoutes } from './routes/enrichment.js';
+import { internalRoutes } from './routes/internal.js';
 import { getProfileCount, insertProfiles } from './db.js';
 import { requireAuth } from './middleware/auth.js';
 
@@ -29,13 +32,19 @@ new Elysia()
           { name: 'Auth', description: 'Authentication endpoints' },
           { name: 'Profiles', description: 'LinkedIn profile/lead management' },
           { name: 'Organizations', description: 'Organization management' },
+          { name: 'Qualifications', description: 'Job qualification criteria' },
+          { name: 'Enrichment', description: 'Profile enrichment and AI scoring' },
         ],
       },
     })
   )
   .use(
     cors({
-      origin: ['http://localhost:5173', /^chrome-extension:\/\//],
+      origin: [
+        'http://localhost:5173',
+        'https://saban.skeptrune.com',
+        /^chrome-extension:\/\//,
+      ],
       credentials: true,
     })
   )
@@ -43,6 +52,9 @@ new Elysia()
   .use(authRoutes)
   .use(profilesRoutes)
   .use(organizationsRoutes)
+  .use(qualificationsRoutes)
+  .use(enrichmentRoutes)
+  .use(internalRoutes)
   // Legacy route for extension compatibility
   .use(requireAuth)
   .post(

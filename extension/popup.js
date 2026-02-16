@@ -1,5 +1,5 @@
-const BACKEND_URL = 'http://localhost:3847';
-const WEB_APP_URL = 'http://localhost:5173';
+const BACKEND_URL = 'https://saban-api.skeptrune.com';
+const WEB_APP_URL = 'https://saban.skeptrune.com';
 
 // DOM elements
 const authLoggedOut = document.getElementById('auth-logged-out');

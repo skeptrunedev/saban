@@ -12,7 +12,6 @@ The extension intercepts LinkedIn's Voyager API requests and extracts profile da
 |----------------|---------|-------------|------------------|
 | `pymkRecommendedEntitySection` | Viewing "People you may know" | `pymkRecommendedEntitySection` | Recommended connections |
 | `browsemapRecommendedEntitySection` | Viewing "More profiles for you" | `browsemapRecommendedEntitySection` | Similar profile suggestions |
-| `directProfileView` | Visiting someone's profile page | `voyagerIdentityDashProfileComponents` | The profile you're viewing |
 | `feedPostAuthors` | Scrolling the home feed | `voyagerFeedDashMainFeed` | Authors of posts in your feed |
 | `postReactions` | Viewing who liked/reacted to a post | `voyagerSocialDashReactions` | People who reacted to a post |
 
@@ -27,10 +26,10 @@ For each profile, we attempt to capture:
 | `vanityName` | LinkedIn URL slug (e.g., `john-doe-123`) | All sources |
 | `profileUrl` | Full LinkedIn profile URL | All sources |
 | `memberUrn` | LinkedIn member URN identifier | Most sources |
-| `headline` | Job title / tagline | Direct profile view, Reactions |
-| `profilePictureUrl` | Profile photo URL | Direct profile view, Reactions |
-| `location` | Geographic location | Direct profile view |
-| `connectionDegree` | 1st, 2nd, 3rd connection | Direct profile view |
+| `headline` | Job title / tagline | All sources (when available) |
+| `profilePictureUrl` | Profile photo URL | All sources (when available) |
+| `location` | Geographic location | All sources (when available) |
+| `connectionDegree` | 1st, 2nd, 3rd connection | All sources (when available) |
 
 ## Architecture
 
@@ -66,9 +65,6 @@ Used for feed post authors. Looks for:
 "firstName":"John"..."publicIdentifier":"john-doe"
 ```
 
-### `extractViewedProfile(text)`
-Used for direct profile views. Extracts single profile with full details including headline, location, etc.
-
 ### `extractReactionProfiles(text)`
 Used for post reactions. Parses JSON structure with `reactorLockup` containing:
 - `title.text` - Full name
@@ -100,6 +96,9 @@ pnpm lint
 
 # Format
 pnpm format
+
+# Sync to remote machine (pop-os)
+rsync -avz --exclude='node_modules' -e "ssh -i ~/.ssh/arguflow" /home/skeptrune/git_projects/skeptrunedev/saban/extension/ skeptrune@pop-os:/home/skeptrune/git_projects/skeptrunedev/saban/extension/
 ```
 
 ## Loading the Extension

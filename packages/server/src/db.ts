@@ -7,6 +7,12 @@ import type {
   Organization,
   OrganizationMember,
   OrganizationWithRole,
+  JobQualification,
+  QualificationCriteria,
+  ProfileEnrichment,
+  QualificationResult,
+  EnrichmentJob,
+  EnrichmentJobStatus,
 } from '@saban/shared';
 
 const { Pool } = pg;
@@ -199,17 +205,58 @@ export async function insertProfiles(
   sourceSection: string,
   organizationId?: string,
   createdByUserId?: string
-): Promise<number> {
+): Promise<{ inserted: number; newProfileIds: number[]; newProfileUrls: string[] }> {
   const client = await pool.connect();
   try {
     let inserted = 0;
+    const newProfileIds: number[] = [];
+    const newProfileUrls: string[] = [];
+
     for (const profile of profiles) {
       try {
-        await client.query(
+        // First, try to update existing records that have null fields we now have data for
+        // This supplements records from other sources (e.g., PYMK) with data from direct views
+        if (profile.headline || profile.profilePictureUrl || profile.location || profile.connectionDegree) {
+          const updateResult = await client.query(
+            `UPDATE similar_profiles SET
+              headline = COALESCE(headline, $1),
+              profile_picture_url = COALESCE(profile_picture_url, $2),
+              location = COALESCE(location, $3),
+              connection_degree = COALESCE(connection_degree, $4),
+              first_name = COALESCE(first_name, $5),
+              last_name = COALESCE(last_name, $6),
+              member_urn = COALESCE(member_urn, $7)
+            WHERE profile_url = $8
+              AND organization_id = $9
+              AND (headline IS NULL OR profile_picture_url IS NULL OR location IS NULL OR connection_degree IS NULL)
+            RETURNING id`,
+            [
+              profile.headline,
+              profile.profilePictureUrl,
+              profile.location,
+              profile.connectionDegree,
+              profile.firstName,
+              profile.lastName,
+              profile.memberUrn,
+              profile.profileUrl,
+              organizationId,
+            ]
+          );
+
+          if (updateResult.rowCount && updateResult.rowCount > 0) {
+            console.log(
+              `Updated ${updateResult.rowCount} existing record(s) for ${profile.profileUrl} with new data from ${sourceSection}`
+            );
+          }
+        }
+
+        // Then insert new record, returning ID if inserted
+        const insertResult = await client.query(
           `INSERT INTO similar_profiles
            (source_profile_url, source_section, profile_url, vanity_name, first_name, last_name, member_urn, headline, profile_picture_url, location, connection_degree, profile_picture_payload, raw_data, organization_id, created_by_user_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           ON CONFLICT (source_profile_url, profile_url) DO NOTHING`,
+           ON CONFLICT (source_profile_url, profile_url) DO NOTHING
+           RETURNING id`,
           [
             sourceProfileUrl,
             sourceSection,
@@ -228,12 +275,17 @@ export async function insertProfiles(
             createdByUserId,
           ]
         );
-        inserted++;
+
+        if (insertResult.rows.length > 0) {
+          inserted++;
+          newProfileIds.push(insertResult.rows[0].id);
+          newProfileUrls.push(profile.profileUrl);
+        }
       } catch (err) {
         console.error('Error inserting profile:', (err as Error).message);
       }
     }
-    return inserted;
+    return { inserted, newProfileIds, newProfileUrls };
   } finally {
     client.release();
   }
@@ -440,6 +492,432 @@ export async function exportProfiles(
   const result = await pool.query(
     `SELECT * FROM similar_profiles ${whereClause} ORDER BY ${safeSortBy} ${safeSortOrder}`,
     params
+  );
+
+  return result.rows as Profile[];
+}
+
+// ==================== QUALIFICATION FUNCTIONS ====================
+
+export async function createQualification(
+  organizationId: string,
+  name: string,
+  description: string | null,
+  criteria: QualificationCriteria,
+  createdByUserId: string
+): Promise<JobQualification> {
+  const result = await pool.query(
+    `INSERT INTO job_qualifications (organization_id, name, description, criteria, created_by_user_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [organizationId, name, description, JSON.stringify(criteria), createdByUserId]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    name: row.name,
+    description: row.description,
+    criteria: row.criteria,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function getQualifications(organizationId: string): Promise<JobQualification[]> {
+  const result = await pool.query(
+    `SELECT * FROM job_qualifications WHERE organization_id = $1 ORDER BY created_at DESC`,
+    [organizationId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    organization_id: row.organization_id,
+    name: row.name,
+    description: row.description,
+    criteria: row.criteria,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
+export async function getQualificationById(
+  id: number,
+  organizationId: string
+): Promise<JobQualification | null> {
+  const result = await pool.query(
+    `SELECT * FROM job_qualifications WHERE id = $1 AND organization_id = $2`,
+    [id, organizationId]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    name: row.name,
+    description: row.description,
+    criteria: row.criteria,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function updateQualification(
+  id: number,
+  organizationId: string,
+  updates: { name?: string; description?: string; criteria?: QualificationCriteria }
+): Promise<JobQualification | null> {
+  const setClauses: string[] = ['updated_at = NOW()'];
+  const params: unknown[] = [];
+  let paramIndex = 1;
+
+  if (updates.name !== undefined) {
+    setClauses.push(`name = $${paramIndex}`);
+    params.push(updates.name);
+    paramIndex++;
+  }
+
+  if (updates.description !== undefined) {
+    setClauses.push(`description = $${paramIndex}`);
+    params.push(updates.description);
+    paramIndex++;
+  }
+
+  if (updates.criteria !== undefined) {
+    setClauses.push(`criteria = $${paramIndex}`);
+    params.push(JSON.stringify(updates.criteria));
+    paramIndex++;
+  }
+
+  params.push(id, organizationId);
+
+  const result = await pool.query(
+    `UPDATE job_qualifications SET ${setClauses.join(', ')}
+     WHERE id = $${paramIndex} AND organization_id = $${paramIndex + 1}
+     RETURNING *`,
+    params
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    name: row.name,
+    description: row.description,
+    criteria: row.criteria,
+    created_by_user_id: row.created_by_user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function deleteQualification(id: number, organizationId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM job_qualifications WHERE id = $1 AND organization_id = $2`,
+    [id, organizationId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// ==================== ENRICHMENT FUNCTIONS ====================
+
+export async function upsertProfileEnrichment(
+  profileId: number,
+  data: {
+    connectionCount?: number;
+    followerCount?: number;
+    experience?: unknown;
+    education?: unknown;
+    skills?: string[];
+    certifications?: unknown;
+    languages?: unknown;
+    about?: string;
+    rawResponse?: unknown;
+  }
+): Promise<ProfileEnrichment> {
+  const result = await pool.query(
+    `INSERT INTO profile_enrichments
+     (profile_id, connection_count, follower_count, experience, education, skills, certifications, languages, about, raw_response)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (profile_id) DO UPDATE SET
+       connection_count = COALESCE(EXCLUDED.connection_count, profile_enrichments.connection_count),
+       follower_count = COALESCE(EXCLUDED.follower_count, profile_enrichments.follower_count),
+       experience = COALESCE(EXCLUDED.experience, profile_enrichments.experience),
+       education = COALESCE(EXCLUDED.education, profile_enrichments.education),
+       skills = COALESCE(EXCLUDED.skills, profile_enrichments.skills),
+       certifications = COALESCE(EXCLUDED.certifications, profile_enrichments.certifications),
+       languages = COALESCE(EXCLUDED.languages, profile_enrichments.languages),
+       about = COALESCE(EXCLUDED.about, profile_enrichments.about),
+       raw_response = COALESCE(EXCLUDED.raw_response, profile_enrichments.raw_response),
+       enriched_at = NOW()
+     RETURNING *`,
+    [
+      profileId,
+      data.connectionCount,
+      data.followerCount,
+      data.experience ? JSON.stringify(data.experience) : null,
+      data.education ? JSON.stringify(data.education) : null,
+      data.skills,
+      data.certifications ? JSON.stringify(data.certifications) : null,
+      data.languages ? JSON.stringify(data.languages) : null,
+      data.about,
+      data.rawResponse ? JSON.stringify(data.rawResponse) : null,
+    ]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    profile_id: row.profile_id,
+    connection_count: row.connection_count,
+    follower_count: row.follower_count,
+    experience: row.experience,
+    education: row.education,
+    skills: row.skills,
+    certifications: row.certifications,
+    languages: row.languages,
+    about: row.about,
+    raw_response: row.raw_response,
+    enriched_at: row.enriched_at,
+  };
+}
+
+export async function getProfileEnrichment(profileId: number): Promise<ProfileEnrichment | null> {
+  const result = await pool.query(
+    `SELECT * FROM profile_enrichments WHERE profile_id = $1`,
+    [profileId]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    profile_id: row.profile_id,
+    connection_count: row.connection_count,
+    follower_count: row.follower_count,
+    experience: row.experience,
+    education: row.education,
+    skills: row.skills,
+    certifications: row.certifications,
+    languages: row.languages,
+    about: row.about,
+    raw_response: row.raw_response,
+    enriched_at: row.enriched_at,
+  };
+}
+
+// ==================== QUALIFICATION RESULT FUNCTIONS ====================
+
+export async function upsertQualificationResult(
+  profileId: number,
+  qualificationId: number,
+  score: number,
+  reasoning: string | null,
+  passed: boolean
+): Promise<QualificationResult> {
+  const result = await pool.query(
+    `INSERT INTO qualification_results (profile_id, qualification_id, score, reasoning, passed)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (profile_id, qualification_id) DO UPDATE SET
+       score = EXCLUDED.score,
+       reasoning = EXCLUDED.reasoning,
+       passed = EXCLUDED.passed,
+       evaluated_at = NOW()
+     RETURNING *`,
+    [profileId, qualificationId, score, reasoning, passed]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    profile_id: row.profile_id,
+    qualification_id: row.qualification_id,
+    score: row.score,
+    reasoning: row.reasoning,
+    passed: row.passed,
+    evaluated_at: row.evaluated_at,
+  };
+}
+
+export async function getProfileQualificationResults(
+  profileId: number
+): Promise<QualificationResult[]> {
+  const result = await pool.query(
+    `SELECT qr.*, jq.name as qualification_name, jq.criteria
+     FROM qualification_results qr
+     JOIN job_qualifications jq ON qr.qualification_id = jq.id
+     WHERE qr.profile_id = $1
+     ORDER BY qr.evaluated_at DESC`,
+    [profileId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    profile_id: row.profile_id,
+    qualification_id: row.qualification_id,
+    score: row.score,
+    reasoning: row.reasoning,
+    passed: row.passed,
+    evaluated_at: row.evaluated_at,
+    qualification: {
+      id: row.qualification_id,
+      organization_id: '',
+      name: row.qualification_name,
+      description: null,
+      criteria: row.criteria,
+      created_by_user_id: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    },
+  }));
+}
+
+// ==================== ENRICHMENT JOB FUNCTIONS ====================
+
+export async function createEnrichmentJob(
+  id: string,
+  profileIds: number[],
+  organizationId: string,
+  qualificationId?: number
+): Promise<EnrichmentJob> {
+  const result = await pool.query(
+    `INSERT INTO enrichment_jobs (id, profile_ids, organization_id, qualification_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [id, profileIds, organizationId, qualificationId]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    snapshot_id: row.snapshot_id,
+    profile_ids: row.profile_ids,
+    qualification_id: row.qualification_id,
+    organization_id: row.organization_id,
+    status: row.status,
+    error: row.error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+  };
+}
+
+export async function updateEnrichmentJob(
+  id: string,
+  updates: {
+    snapshotId?: string;
+    status?: EnrichmentJobStatus;
+    error?: string;
+    completedAt?: Date;
+  }
+): Promise<EnrichmentJob | null> {
+  const setClauses: string[] = ['updated_at = NOW()'];
+  const params: unknown[] = [];
+  let paramIndex = 1;
+
+  if (updates.snapshotId !== undefined) {
+    setClauses.push(`snapshot_id = $${paramIndex}`);
+    params.push(updates.snapshotId);
+    paramIndex++;
+  }
+
+  if (updates.status !== undefined) {
+    setClauses.push(`status = $${paramIndex}`);
+    params.push(updates.status);
+    paramIndex++;
+  }
+
+  if (updates.error !== undefined) {
+    setClauses.push(`error = $${paramIndex}`);
+    params.push(updates.error);
+    paramIndex++;
+  }
+
+  if (updates.completedAt !== undefined) {
+    setClauses.push(`completed_at = $${paramIndex}`);
+    params.push(updates.completedAt);
+    paramIndex++;
+  }
+
+  params.push(id);
+
+  const result = await pool.query(
+    `UPDATE enrichment_jobs SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    params
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    snapshot_id: row.snapshot_id,
+    profile_ids: row.profile_ids,
+    qualification_id: row.qualification_id,
+    organization_id: row.organization_id,
+    status: row.status,
+    error: row.error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+  };
+}
+
+export async function getEnrichmentJob(id: string): Promise<EnrichmentJob | null> {
+  const result = await pool.query(`SELECT * FROM enrichment_jobs WHERE id = $1`, [id]);
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    snapshot_id: row.snapshot_id,
+    profile_ids: row.profile_ids,
+    qualification_id: row.qualification_id,
+    organization_id: row.organization_id,
+    status: row.status,
+    error: row.error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+  };
+}
+
+export async function getEnrichmentJobs(organizationId: string): Promise<EnrichmentJob[]> {
+  const result = await pool.query(
+    `SELECT * FROM enrichment_jobs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50`,
+    [organizationId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    snapshot_id: row.snapshot_id,
+    profile_ids: row.profile_ids,
+    qualification_id: row.qualification_id,
+    organization_id: row.organization_id,
+    status: row.status,
+    error: row.error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+  }));
+}
+
+export async function getProfilesByIds(ids: number[], organizationId: string): Promise<Profile[]> {
+  if (ids.length === 0) return [];
+
+  const result = await pool.query(
+    `SELECT * FROM similar_profiles WHERE id = ANY($1) AND organization_id = $2`,
+    [ids, organizationId]
   );
 
   return result.rows as Profile[];

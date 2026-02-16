@@ -6,12 +6,6 @@
     'pymkRecommendedEntitySection', // "People you may know"
   ];
 
-  // Patterns for direct profile view API
-  const PROFILE_VIEW_PATTERNS = [
-    'voyagerIdentityDashProfileComponents',
-    'voyagerFeedDashGlobalNavs',
-  ];
-
   // Pattern for feed posts (captures post authors while scrolling)
   const FEED_PATTERN = 'voyagerFeedDashMainFeed';
 
@@ -24,27 +18,6 @@
     const response = await originalFetch.apply(this, args);
     const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
 
-    // Debug: log all graphql/voyager requests and check for profile data
-    if (url.includes('graphql') || url.includes('voyager')) {
-      console.log('[LinkedIn Scraper] FETCH detected:', url.substring(0, 120));
-
-      // Check if response contains profile data with occupation/headline
-      try {
-        const debugClone = response.clone();
-        const debugText = await debugClone.text();
-        const hasOccupation = debugText.includes('"occupation"');
-        const hasHeadline = debugText.includes('"headline"');
-        const hasFirstName = (debugText.match(/"firstName":"[A-Z]/g) || []).length;
-
-        if (hasFirstName > 0 && (hasOccupation || hasHeadline)) {
-          console.log(`[LinkedIn Scraper] *** FOUND PROFILE DATA *** URL: ${url.substring(0, 100)}`);
-          console.log(`[LinkedIn Scraper]   firstNames: ${hasFirstName}, hasOccupation: ${hasOccupation}, hasHeadline: ${hasHeadline}`);
-        }
-      } catch (e) {
-        // Ignore debug errors
-      }
-    }
-
     const matchedPattern = TARGET_PATTERNS.find((p) => url.includes(p));
     if (matchedPattern) {
       try {
@@ -52,10 +25,33 @@
         const text = await clone.text();
         console.log(`[LinkedIn Scraper] Intercepted ${matchedPattern}, length: ${text.length}`);
 
+        // DEBUG: Log what fields exist in response
+        console.log('[LinkedIn Scraper] DEBUG PYMK/BROWSEMAP fields:', {
+          hasOccupation: text.includes('"occupation"'),
+          hasHeadline: text.includes('"headline"'),
+          hasTagline: text.includes('"tagline"'),
+          hasLocationName: text.includes('"locationName"'),
+          hasGeoLocationName: text.includes('"geoLocationName"'),
+          hasDistance: text.includes('"distance"'),
+          hasConnectionDegree: text.includes('"connectionDegree"'),
+          hasPicture: text.includes('"picture"'),
+          hasProfilePicture: text.includes('"profilePicture"'),
+          hasRootUrl: text.includes('"rootUrl"'),
+          hasImage: text.includes('"image"'),
+        });
+
+        // Find a sample profile block to see structure
+        const sampleMatch = text.match(/"firstName":"([^"]+)","lastName":"([^"]+)"[\s\S]{0,2000}/);
+        if (sampleMatch) {
+          console.log('[LinkedIn Scraper] DEBUG - Sample profile block (first match):', sampleMatch[0].substring(0, 1500));
+        }
+
         const profiles = extractProfiles(text);
 
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles`);
+          // DEBUG: Log first profile's extracted data
+          console.log('[LinkedIn Scraper] DEBUG - First profile extracted:', JSON.stringify(profiles[0], null, 2));
           // Send to isolated content script via postMessage
           window.postMessage(
             {
@@ -74,35 +70,6 @@
       }
     }
 
-    // Also intercept direct profile views
-    const profileViewPattern = PROFILE_VIEW_PATTERNS.find((p) => url.includes(p));
-    if (profileViewPattern) {
-      try {
-        const clone = response.clone();
-        const text = await clone.text();
-        console.log(`[LinkedIn Scraper] Intercepted profile view, length: ${text.length}`);
-
-        const profile = extractViewedProfile(text);
-
-        if (profile) {
-          console.log(
-            `[LinkedIn Scraper] Captured viewed profile: ${profile.firstName} ${profile.lastName}`
-          );
-          window.postMessage(
-            {
-              type: 'LINKEDIN_SCRAPER_PROFILES',
-              profiles: [profile],
-              sourceProfileUrl: window.location.href,
-              sourceSection: 'directProfileView',
-            },
-            '*'
-          );
-        }
-      } catch (err) {
-        console.error('[LinkedIn Scraper] Error extracting viewed profile:', err);
-      }
-    }
-
     // Intercept feed to capture post authors while scrolling
     if (url.includes(FEED_PATTERN)) {
       try {
@@ -110,10 +77,31 @@
         const text = await clone.text();
         console.log(`[LinkedIn Scraper] Intercepted feed, length: ${text.length}`);
 
+        // DEBUG: Log what fields exist in feed response
+        console.log('[LinkedIn Scraper] DEBUG FEED fields:', {
+          hasOccupation: text.includes('"occupation"'),
+          hasHeadline: text.includes('"headline"'),
+          hasDescription: text.includes('"description"'),
+          hasTagline: text.includes('"tagline"'),
+          hasLocationName: text.includes('"locationName"'),
+          hasGeoLocationName: text.includes('"geoLocationName"'),
+          hasDistance: text.includes('"distance"'),
+          hasPicture: text.includes('"picture"'),
+          hasProfilePicture: text.includes('"profilePicture"'),
+          hasRootUrl: text.includes('"rootUrl"'),
+        });
+
+        // Find a sample author block to see structure
+        const sampleMatch = text.match(/"firstName":"([^"]+)"[\s\S]{0,300}?"publicIdentifier":"([^"]+)"[\s\S]{0,1500}/);
+        if (sampleMatch) {
+          console.log('[LinkedIn Scraper] DEBUG FEED - Sample author block:', sampleMatch[0].substring(0, 1200));
+        }
+
         const profiles = extractFeedProfiles(text);
 
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from feed`);
+          console.log('[LinkedIn Scraper] DEBUG FEED - First profile:', JSON.stringify(profiles[0], null, 2));
           window.postMessage(
             {
               type: 'LINKEDIN_SCRAPER_PROFILES',
@@ -136,10 +124,15 @@
         const text = await clone.text();
         console.log(`[LinkedIn Scraper] Intercepted reactions, length: ${text.length}`);
 
+        // DEBUG: Check reactions response
+        console.log(`[LinkedIn Scraper] DEBUG REACTIONS - Has subtitle: ${text.includes('"subtitle"')}, Has title: ${text.includes('"title"')}`);
+        console.log('[LinkedIn Scraper] DEBUG REACTIONS - Sample:', text.substring(0, 1500));
+
         const profiles = extractReactionProfiles(text);
 
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from reactions`);
+          console.log('[LinkedIn Scraper] DEBUG REACTIONS - First profile:', JSON.stringify(profiles[0], null, 2));
           window.postMessage(
             {
               type: 'LINKEDIN_SCRAPER_PROFILES',
@@ -247,8 +240,12 @@
                        context.match(/"tagline":"([^"]+)"/) ||
                        context.match(/"occupation":"([^"]+)"/))?.[ 1] || null;
 
-      // Extract profile picture URL
-      const profilePictureUrl = extraData.profilePictureUrl ||
+      // Extract profile picture URL - try payload first (PYMK/browsemap), then standard patterns
+      const payloadMatch = context.match(/"profilePictureRenderPayload":"([^"]+)"/);
+      const pictureFromPayload = payloadMatch ? extractPictureFromPayload(payloadMatch[1]) : null;
+
+      const profilePictureUrl = pictureFromPayload ||
+                               extraData.profilePictureUrl ||
                                (context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
                                 context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
                                 context.match(/"image"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/))?.[ 1] || null;
@@ -302,9 +299,12 @@
                            context.match(/"occupation":"([^"]+)"/);
       const headline = headlineMatch ? headlineMatch[1] : null;
 
+      // Try payload first, then standard patterns
+      const payloadMatch2 = context.match(/"profilePictureRenderPayload":"([^"]+)"/);
+      const pictureFromPayload2 = payloadMatch2 ? extractPictureFromPayload(payloadMatch2[1]) : null;
       const pictureMatch = context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
                           context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
-      const profilePictureUrl = pictureMatch ? pictureMatch[1] : null;
+      const profilePictureUrl = pictureFromPayload2 || (pictureMatch ? pictureMatch[1] : null);
 
       const locationMatch = context.match(/"locationName":"([^"]+)"/) ||
                            context.match(/"geoLocationName":"([^"]+)"/);
@@ -526,64 +526,28 @@
     return profiles;
   }
 
-  function extractViewedProfile(text) {
-    // Extract the profile being directly viewed
-    // Look for the main profile data with firstName, lastName, and publicIdentifier
-
-    // Pattern for profile data in the response
-    const firstNameMatch = text.match(/"firstName":"([^"]+)"/);
-    const lastNameMatch = text.match(/"lastName":"([^"]+)"/);
-    const publicIdMatch = text.match(/"publicIdentifier":"([^"]+)"/);
-    const memberUrnMatch = text.match(/"entityUrn":"urn:li:fsd_profile:([^"]+)"/);
-
-    if (!firstNameMatch || !lastNameMatch) {
-      return null;
+  // Decode profile picture from base64 payload used in PYMK/browsemap
+  function extractPictureFromPayload(payload) {
+    if (!payload) return null;
+    try {
+      // The payload is base64 encoded and contains embedded URLs
+      const decoded = atob(payload);
+      // Look for LinkedIn CDN URL pattern in the decoded content
+      const urlMatch = decoded.match(/https:\/\/media\.licdn\.com\/dms\/image\/[^\s"',]+/);
+      if (urlMatch) {
+        // Clean up the URL - remove any trailing binary garbage
+        let url = urlMatch[0];
+        // Find where the valid URL ends (before any control characters)
+        const invalidCharIndex = url.search(/[\x00-\x1f]/);
+        if (invalidCharIndex > 0) {
+          url = url.substring(0, invalidCharIndex);
+        }
+        return url;
+      }
+    } catch (e) {
+      console.log('[LinkedIn Scraper] Failed to decode picture payload:', e);
     }
-
-    const firstName = firstNameMatch[1];
-    const lastName = lastNameMatch[1];
-    const vanityName = publicIdMatch ? publicIdMatch[1] : null;
-    const profileUrl = vanityName
-      ? `https://www.linkedin.com/in/${vanityName}`
-      : window.location.href.split('?')[0];
-    const memberUrn = memberUrnMatch ? `urn:li:member:${memberUrnMatch[1]}` : null;
-
-    // Extract headline
-    const headlineMatch = text.match(/"headline":"([^"]+)"/) ||
-                         text.match(/"tagline":"([^"]+)"/);
-    const headline = headlineMatch ? headlineMatch[1] : null;
-
-    // Extract profile picture URL (look for the highest quality image)
-    const pictureMatch = text.match(/"displayImageReference"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
-                        text.match(/"profilePicture"[\s\S]{0,500}?"artifacts"[\s\S]{0,200}?"fileIdentifyingUrlPathSegment":"([^"]+)"/) ||
-                        text.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/);
-    const profilePictureUrl = pictureMatch ? pictureMatch[1] : null;
-
-    // Extract location
-    const locationMatch = text.match(/"geoLocationName":"([^"]+)"/) ||
-                         text.match(/"locationName":"([^"]+)"/) ||
-                         text.match(/"geoLocation"[\s\S]{0,100}?"name":"([^"]+)"/);
-    const location = locationMatch ? locationMatch[1] : null;
-
-    // Extract connection degree
-    const degreeMatch = text.match(/"distance":\{"value":"([^"]+)"\}/) ||
-                       text.match(/"degree":"([^"]+)"/) ||
-                       text.match(/"connectionDegree":"([^"]+)"/);
-    const connectionDegree = degreeMatch ? degreeMatch[1] : null;
-
-    return {
-      firstName,
-      lastName,
-      vanityName,
-      profileUrl,
-      memberUrn,
-      headline,
-      profilePictureUrl,
-      location,
-      connectionDegree,
-      profilePicturePayload: null,
-      raw: { firstName, lastName, vanityName, profileUrl, memberUrn, headline, profilePictureUrl, location, connectionDegree, directView: true },
-    };
+    return null;
   }
 
   function extractVanityName(profileUrl) {
@@ -645,18 +609,9 @@
   async function processXHRResponse(xhr, url) {
     // Check for feed pattern
     if (url.includes(FEED_PATTERN)) {
-      console.log(
-        '[LinkedIn Scraper] XHR feed pattern matched! responseType:',
-        xhr.responseType,
-        'status:',
-        xhr.status
-      );
       try {
         const responseText = await getXHRResponseText(xhr);
-        if (!responseText) {
-          console.error('[LinkedIn Scraper] Could not get response text');
-          return;
-        }
+        if (!responseText) return;
         console.log(`[LinkedIn Scraper] XHR Intercepted feed, length: ${responseText.length}`);
         const profiles = extractFeedProfiles(responseText);
         if (profiles.length > 0) {
@@ -673,41 +628,6 @@
         }
       } catch (err) {
         console.error('[LinkedIn Scraper] XHR feed error:', err);
-      }
-    }
-
-    // Check for profile view patterns
-    const profileViewPattern = PROFILE_VIEW_PATTERNS.find((p) => url.includes(p));
-    if (profileViewPattern) {
-      console.log(
-        '[LinkedIn Scraper] XHR profile view matched! responseType:',
-        xhr.responseType,
-        'status:',
-        xhr.status
-      );
-      try {
-        const responseText = await getXHRResponseText(xhr);
-        if (!responseText) return;
-        console.log(
-          `[LinkedIn Scraper] XHR Intercepted profile view, length: ${responseText.length}`
-        );
-        const profile = extractViewedProfile(responseText);
-        if (profile) {
-          console.log(
-            `[LinkedIn Scraper] Captured viewed profile (XHR): ${profile.firstName} ${profile.lastName}`
-          );
-          window.postMessage(
-            {
-              type: 'LINKEDIN_SCRAPER_PROFILES',
-              profiles: [profile],
-              sourceProfileUrl: window.location.href,
-              sourceSection: 'directProfileView',
-            },
-            '*'
-          );
-        }
-      } catch (err) {
-        console.error('[LinkedIn Scraper] XHR profile view error:', err);
       }
     }
 
@@ -775,12 +695,6 @@
   XMLHttpRequest.prototype.send = function (...args) {
     this.addEventListener('load', function () {
       const url = this._url || '';
-
-      // Debug: log all graphql/voyager XHR requests
-      if (url.includes('graphql') || url.includes('voyager')) {
-        console.log('[LinkedIn Scraper] XHR detected:', url.substring(0, 120));
-      }
-
       // Process the response asynchronously to handle blob responses
       processXHRResponse(this, url);
     });

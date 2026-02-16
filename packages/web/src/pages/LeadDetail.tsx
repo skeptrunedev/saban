@@ -1,6 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Profile } from '@saban/shared';
-import { useProfile, useUpdateProfile } from '@/lib/queries';
+import {
+  useProfile,
+  useUpdateProfile,
+  useProfileEnrichment,
+  useProfileQualifications,
+  useStartEnrichment,
+  useQualifications,
+} from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +21,21 @@ import {
 import { Label } from '@/components/ui/label';
 import { NotesEditor } from '@/components/NotesEditor';
 import { TagManager } from '@/components/TagManager';
-import { ArrowLeft, ExternalLink, User, MapPin, Link2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ExternalLink,
+  User,
+  MapPin,
+  Link2,
+  Users,
+  Sparkles,
+  Briefcase,
+  GraduationCap,
+  CheckCircle,
+  XCircle,
+  Loader2,
+} from 'lucide-react';
+import { parseUTCTimestamp } from '@/lib/utils';
 
 const statusColors: Record<Profile['status'], string> = {
   new: 'bg-blue-100 text-blue-800',
@@ -30,7 +51,11 @@ export function LeadDetail() {
   const profileId = parseInt(id || '0', 10);
 
   const { data: profile, isLoading } = useProfile(profileId);
+  const { data: enrichment, isLoading: enrichmentLoading } = useProfileEnrichment(profileId);
+  const { data: qualificationResults } = useProfileQualifications(profileId);
+  const { data: qualifications } = useQualifications();
   const updateMutation = useUpdateProfile();
+  const enrichMutation = useStartEnrichment();
 
   const handleStatusChange = (newStatus: Profile['status']) => {
     updateMutation.mutate({ id: profileId, updates: { status: newStatus } });
@@ -42,6 +67,10 @@ export function LeadDetail() {
 
   const handleTagsUpdate = async (tags: string[]) => {
     await updateMutation.mutateAsync({ id: profileId, updates: { tags } });
+  };
+
+  const handleEnrich = async (qualificationId?: number) => {
+    await enrichMutation.mutateAsync({ profileIds: [profileId], qualificationId });
   };
 
   if (isLoading) {
@@ -184,12 +213,243 @@ export function LeadDetail() {
             </div>
             <div>
               <p className="font-medium text-muted-foreground">Captured</p>
-              <p>{new Date(profile.captured_at).toLocaleString()}</p>
+              <p>
+                {parseUTCTimestamp(profile.captured_at).toLocaleString(undefined, {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  timeZoneName: 'short',
+                })}
+              </p>
             </div>
             {profile.member_urn && (
               <div>
                 <p className="font-medium text-muted-foreground">Member URN</p>
                 <p className="font-mono text-xs break-all">{profile.member_urn}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Enrichment Section */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Enrichment Data
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleEnrich()}
+              disabled={enrichMutation.isPending}
+            >
+              {enrichMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enriching...
+                </>
+              ) : (
+                'Enrich Profile'
+              )}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {enrichmentLoading ? (
+              <p className="text-sm text-muted-foreground">Loading enrichment data...</p>
+            ) : enrichment ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Users className="h-4 w-4" />
+                      Connections
+                    </div>
+                    <p className="text-2xl font-bold">
+                      {enrichment.connection_count?.toLocaleString() || 'N/A'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Users className="h-4 w-4" />
+                      Followers
+                    </div>
+                    <p className="text-2xl font-bold">
+                      {enrichment.follower_count?.toLocaleString() || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {enrichment.about && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">About</p>
+                    <p className="text-sm line-clamp-4">{enrichment.about}</p>
+                  </div>
+                )}
+
+                {enrichment.skills && enrichment.skills.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Skills</p>
+                    <div className="flex flex-wrap gap-1">
+                      {enrichment.skills.slice(0, 10).map((skill, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {skill}
+                        </Badge>
+                      ))}
+                      {enrichment.skills.length > 10 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{enrichment.skills.length - 10} more
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {enrichment.experience && enrichment.experience.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                      <Briefcase className="h-4 w-4" />
+                      Experience
+                    </p>
+                    <div className="space-y-2">
+                      {enrichment.experience.slice(0, 3).map((exp, i) => (
+                        <div key={i} className="text-sm border-l-2 pl-3">
+                          <p className="font-medium">{exp.title}</p>
+                          <p className="text-muted-foreground">{exp.company}</p>
+                          {exp.duration && (
+                            <p className="text-xs text-muted-foreground">{exp.duration}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {enrichment.education && enrichment.education.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                      <GraduationCap className="h-4 w-4" />
+                      Education
+                    </p>
+                    <div className="space-y-2">
+                      {enrichment.education.slice(0, 2).map((edu, i) => (
+                        <div key={i} className="text-sm border-l-2 pl-3">
+                          <p className="font-medium">{edu.school}</p>
+                          {edu.degree && (
+                            <p className="text-muted-foreground">
+                              {edu.degree}
+                              {edu.field_of_study && ` in ${edu.field_of_study}`}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Last enriched: {new Date(enrichment.enriched_at).toLocaleString()}
+                </p>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground mb-2">
+                  No enrichment data available yet
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Click "Enrich Profile" to fetch connection count, experience, and more
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-lg">Qualification Scores</CardTitle>
+            {qualifications && qualifications.length > 0 && (
+              <Select
+                onValueChange={(v) => handleEnrich(parseInt(v))}
+                disabled={enrichMutation.isPending}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Run qualification..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {qualifications.map((qual) => (
+                    <SelectItem key={qual.id} value={String(qual.id)}>
+                      {qual.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+          <CardContent>
+            {qualificationResults && qualificationResults.length > 0 ? (
+              <div className="space-y-3">
+                {qualificationResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className={`rounded-lg border p-4 ${
+                      result.passed
+                        ? 'border-green-200 bg-green-50'
+                        : 'border-red-200 bg-red-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {result.passed ? (
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        ) : (
+                          <XCircle className="h-5 w-5 text-red-600" />
+                        )}
+                        <span className="font-medium">
+                          {result.qualification?.name || 'Unknown Qualification'}
+                        </span>
+                      </div>
+                      <div
+                        className={`text-2xl font-bold ${
+                          result.passed ? 'text-green-600' : 'text-red-600'
+                        }`}
+                      >
+                        {result.score}/100
+                      </div>
+                    </div>
+                    {result.reasoning && (
+                      <p className="text-sm text-muted-foreground">{result.reasoning}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Evaluated: {new Date(result.evaluated_at).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground mb-2">
+                  No qualification scores yet
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {qualifications && qualifications.length > 0
+                    ? 'Select a qualification to score this profile'
+                    : 'Create a job qualification first to score leads'}
+                </p>
+                {(!qualifications || qualifications.length === 0) && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => navigate('/qualifications')}
+                    className="mt-2"
+                  >
+                    Create Qualification
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>
