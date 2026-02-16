@@ -28,7 +28,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('[Background] Received profiles:', message.profiles.length);
 
     // Check if any profiles need member URN resolution
-    const needsResolution = message.profiles.some(p => p.vanityName && p.vanityName.startsWith('ACo'));
+    const needsResolution = message.profiles.some(
+      (p) => p.vanityName && p.vanityName.startsWith('ACo')
+    );
 
     const processAndSend = async () => {
       let profiles = message.profiles;
@@ -160,15 +162,20 @@ async function convertProfileImages(profiles) {
 
   for (let i = 0; i < converted.length; i += BATCH_SIZE) {
     const batch = converted.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (profile, idx) => {
-      if (profile.profilePictureUrl && !profile.profilePicturePayload) {
-        const dataUrl = await imageToDataUrl(profile.profilePictureUrl);
-        if (dataUrl) {
-          converted[i + idx].profilePicturePayload = dataUrl;
-          console.log('[Background] Converted image for:', profile.vanityName || profile.firstName);
+    await Promise.all(
+      batch.map(async (profile, idx) => {
+        if (profile.profilePictureUrl && !profile.profilePicturePayload) {
+          const dataUrl = await imageToDataUrl(profile.profilePictureUrl);
+          if (dataUrl) {
+            converted[i + idx].profilePicturePayload = dataUrl;
+            console.log(
+              '[Background] Converted image for:',
+              profile.vanityName || profile.firstName
+            );
+          }
         }
-      }
-    }));
+      })
+    );
   }
 
   return converted;
@@ -187,7 +194,7 @@ async function sendToBackend(profiles, sourceProfileUrl, sourceSection) {
   // Convert profile pictures to data URLs before sending
   console.log('[Background] Converting profile images...');
   const profilesWithImages = await convertProfileImages(profiles);
-  const convertedCount = profilesWithImages.filter(p => p.profilePicturePayload).length;
+  const convertedCount = profilesWithImages.filter((p) => p.profilePicturePayload).length;
   console.log('[Background] Converted', convertedCount, 'of', profiles.length, 'profile images');
 
   const response = await fetch(`${BACKEND_URL}/profiles`, {
@@ -284,27 +291,27 @@ async function resolveProfiles(profiles) {
   for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
     const batch = toResolve.slice(i, i + BATCH_SIZE);
 
-    await Promise.all(batch.map(async ({ idx, profile }) => {
-      const vanityName = await resolveMemberUrnUrl(profile.profileUrl);
-      if (vanityName) {
-        resolved[idx] = {
-          ...profile,
-          vanityName,
-          profileUrl: `https://www.linkedin.com/in/${vanityName}`,
-          raw: { ...profile.raw, originalVanity: profile.vanityName, resolvedVanity: vanityName }
-        };
-      }
-    }));
+    await Promise.all(
+      batch.map(async ({ idx, profile }) => {
+        const vanityName = await resolveMemberUrnUrl(profile.profileUrl);
+        if (vanityName) {
+          resolved[idx] = {
+            ...profile,
+            vanityName,
+            profileUrl: `https://www.linkedin.com/in/${vanityName}`,
+            raw: { ...profile.raw, originalVanity: profile.vanityName, resolvedVanity: vanityName },
+          };
+        }
+      })
+    );
 
     // Small delay between batches
     if (i + BATCH_SIZE < toResolve.length) {
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
 
-  const resolvedCount = resolved.filter((p, i) =>
-    profiles[i].vanityName !== p.vanityName
-  ).length;
+  const resolvedCount = resolved.filter((p, i) => profiles[i].vanityName !== p.vanityName).length;
   console.log('[Background] Resolved', resolvedCount, '/', toResolve.length, 'profiles');
 
   return resolved;

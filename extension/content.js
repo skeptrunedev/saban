@@ -43,7 +43,10 @@
         // Find a sample profile block to see structure
         const sampleMatch = text.match(/"firstName":"([^"]+)","lastName":"([^"]+)"[\s\S]{0,2000}/);
         if (sampleMatch) {
-          console.log('[LinkedIn Scraper] DEBUG - Sample profile block (first match):', sampleMatch[0].substring(0, 1500));
+          console.log(
+            '[LinkedIn Scraper] DEBUG - Sample profile block (first match):',
+            sampleMatch[0].substring(0, 1500)
+          );
         }
 
         const profiles = extractProfiles(text);
@@ -51,7 +54,10 @@
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles`);
           // DEBUG: Log first profile's extracted data
-          console.log('[LinkedIn Scraper] DEBUG - First profile extracted:', JSON.stringify(profiles[0], null, 2));
+          console.log(
+            '[LinkedIn Scraper] DEBUG - First profile extracted:',
+            JSON.stringify(profiles[0], null, 2)
+          );
           // Send to isolated content script via postMessage
           window.postMessage(
             {
@@ -92,16 +98,24 @@
         });
 
         // Find a sample author block to see structure
-        const sampleMatch = text.match(/"firstName":"([^"]+)"[\s\S]{0,300}?"publicIdentifier":"([^"]+)"[\s\S]{0,1500}/);
+        const sampleMatch = text.match(
+          /"firstName":"([^"]+)"[\s\S]{0,300}?"publicIdentifier":"([^"]+)"[\s\S]{0,1500}/
+        );
         if (sampleMatch) {
-          console.log('[LinkedIn Scraper] DEBUG FEED - Sample author block:', sampleMatch[0].substring(0, 1200));
+          console.log(
+            '[LinkedIn Scraper] DEBUG FEED - Sample author block:',
+            sampleMatch[0].substring(0, 1200)
+          );
         }
 
         const profiles = extractFeedProfiles(text);
 
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from feed`);
-          console.log('[LinkedIn Scraper] DEBUG FEED - First profile:', JSON.stringify(profiles[0], null, 2));
+          console.log(
+            '[LinkedIn Scraper] DEBUG FEED - First profile:',
+            JSON.stringify(profiles[0], null, 2)
+          );
           window.postMessage(
             {
               type: 'LINKEDIN_SCRAPER_PROFILES',
@@ -153,7 +167,9 @@
 
     // Find all fsd_profile or profile entities with occupation/headline
     // Pattern: publicIdentifier near occupation
-    const profileBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,800}?"occupation":"([^"]+)"/g);
+    const profileBlocks = text.matchAll(
+      /"publicIdentifier":"([^"]+)"[^}]{0,800}?"occupation":"([^"]+)"/g
+    );
     for (const match of profileBlocks) {
       const publicId = match[1];
       const occupation = match[2];
@@ -162,7 +178,9 @@
     }
 
     // Also try reverse order (occupation before publicIdentifier)
-    const reverseBlocks = text.matchAll(/"occupation":"([^"]+)"[^}]{0,800}?"publicIdentifier":"([^"]+)"/g);
+    const reverseBlocks = text.matchAll(
+      /"occupation":"([^"]+)"[^}]{0,800}?"publicIdentifier":"([^"]+)"/g
+    );
     for (const match of reverseBlocks) {
       const occupation = match[1];
       const publicId = match[2];
@@ -171,7 +189,9 @@
     }
 
     // Find headline field
-    const headlineBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,500}?"headline":"([^"]+)"/g);
+    const headlineBlocks = text.matchAll(
+      /"publicIdentifier":"([^"]+)"[^}]{0,500}?"headline":"([^"]+)"/g
+    );
     for (const match of headlineBlocks) {
       const publicId = match[1];
       const headline = match[2];
@@ -180,7 +200,9 @@
     }
 
     // Find geoLocationName
-    const locationBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,500}?"geoLocationName":"([^"]+)"/g);
+    const locationBlocks = text.matchAll(
+      /"publicIdentifier":"([^"]+)"[^}]{0,500}?"geoLocationName":"([^"]+)"/g
+    );
     for (const match of locationBlocks) {
       const publicId = match[1];
       const location = match[2];
@@ -189,7 +211,9 @@
     }
 
     // Find profile picture rootUrl near publicIdentifier
-    const pictureBlocks = text.matchAll(/"publicIdentifier":"([^"]+)"[^}]{0,1000}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/g);
+    const pictureBlocks = text.matchAll(
+      /"publicIdentifier":"([^"]+)"[^}]{0,1000}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/g
+    );
     for (const match of pictureBlocks) {
       const publicId = match[1];
       const pictureUrl = match[2];
@@ -197,7 +221,11 @@
       map[publicId].profilePictureUrl = pictureUrl;
     }
 
-    console.log('[LinkedIn Scraper] Built profile data map with', Object.keys(map).length, 'entries');
+    console.log(
+      '[LinkedIn Scraper] Built profile data map with',
+      Object.keys(map).length,
+      'entries'
+    );
     return map;
   }
 
@@ -231,31 +259,39 @@
       const context = text.slice(Math.max(0, match.index - 500), match.index + 2000);
 
       // Extract headline - prefer map data, then context
-      const headline = extraData.headline ||
-                      (context.match(/"headline":"([^"]+)"/) ||
-                       context.match(/"tagline":"([^"]+)"/) ||
-                       context.match(/"occupation":"([^"]+)"/))?.[ 1] || null;
+      const headline =
+        extraData.headline ||
+        (context.match(/"headline":"([^"]+)"/) ||
+          context.match(/"tagline":"([^"]+)"/) ||
+          context.match(/"occupation":"([^"]+)"/))?.[1] ||
+        null;
 
       // Extract profile picture URL - try payload first (PYMK/browsemap), then standard patterns
       const payloadMatch = context.match(/"profilePictureRenderPayload":"([^"]+)"/);
       const pictureFromPayload = payloadMatch ? extractPictureFromPayload(payloadMatch[1]) : null;
 
-      const profilePictureUrl = pictureFromPayload ||
-                               extraData.profilePictureUrl ||
-                               (context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
-                                context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
-                                context.match(/"image"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/))?.[ 1] || null;
+      const profilePictureUrl =
+        pictureFromPayload ||
+        extraData.profilePictureUrl ||
+        (context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
+          context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/) ||
+          context.match(/"image"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/))?.[1] ||
+        null;
 
       // Extract location
-      const location = extraData.location ||
-                      (context.match(/"locationName":"([^"]+)"/) ||
-                       context.match(/"geoLocationName":"([^"]+)"/))?.[ 1] || null;
+      const location =
+        extraData.location ||
+        (context.match(/"locationName":"([^"]+)"/) ||
+          context.match(/"geoLocationName":"([^"]+)"/))?.[1] ||
+        null;
 
       // Extract connection degree
-      const connectionDegree = extraData.connectionDegree ||
-                              (context.match(/"distance":\{"value":"([^"]+)"\}/) ||
-                               context.match(/"degree":(\d)/) ||
-                               context.match(/"connectionDegree":"([^"]+)"/))?.[ 1] || null;
+      const connectionDegree =
+        extraData.connectionDegree ||
+        (context.match(/"distance":\{"value":"([^"]+)"\}/) ||
+          context.match(/"degree":(\d)/) ||
+          context.match(/"connectionDegree":"([^"]+)"/))?.[1] ||
+        null;
 
       profiles.push({
         firstName,
@@ -268,7 +304,17 @@
         location,
         connectionDegree,
         profilePicturePayload: null,
-        raw: { firstName, lastName, vanityName, profileUrl, memberUrn, headline, profilePictureUrl, location, connectionDegree },
+        raw: {
+          firstName,
+          lastName,
+          vanityName,
+          profileUrl,
+          memberUrn,
+          headline,
+          profilePictureUrl,
+          location,
+          connectionDegree,
+        },
       });
       console.log(
         `[LinkedIn Scraper] Extracted (with name): ${firstName} ${lastName} - ${profileUrl} - headline: ${headline}`
@@ -291,23 +337,26 @@
       // Get additional context for extra fields
       const context = text.slice(Math.max(0, match.index - 500), match.index + 2000);
 
-      const headlineMatch = context.match(/"headline":"([^"]+)"/) ||
-                           context.match(/"occupation":"([^"]+)"/);
+      const headlineMatch =
+        context.match(/"headline":"([^"]+)"/) || context.match(/"occupation":"([^"]+)"/);
       const headline = headlineMatch ? headlineMatch[1] : null;
 
       // Try payload first, then standard patterns
       const payloadMatch2 = context.match(/"profilePictureRenderPayload":"([^"]+)"/);
-      const pictureFromPayload2 = payloadMatch2 ? extractPictureFromPayload(payloadMatch2[1]) : null;
-      const pictureMatch = context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
-                          context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
+      const pictureFromPayload2 = payloadMatch2
+        ? extractPictureFromPayload(payloadMatch2[1])
+        : null;
+      const pictureMatch =
+        context.match(/"picture"[\s\S]{0,300}?"rootUrl":"(https:\/\/media\.licdn\.com\/[^"]+)"/) ||
+        context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
       const profilePictureUrl = pictureFromPayload2 || (pictureMatch ? pictureMatch[1] : null);
 
-      const locationMatch = context.match(/"locationName":"([^"]+)"/) ||
-                           context.match(/"geoLocationName":"([^"]+)"/);
+      const locationMatch =
+        context.match(/"locationName":"([^"]+)"/) || context.match(/"geoLocationName":"([^"]+)"/);
       const location = locationMatch ? locationMatch[1] : null;
 
-      const degreeMatch = context.match(/"distance":\{"value":"([^"]+)"\}/) ||
-                         context.match(/"degree":(\d)/);
+      const degreeMatch =
+        context.match(/"distance":\{"value":"([^"]+)"\}/) || context.match(/"degree":(\d)/);
       const connectionDegree = degreeMatch ? degreeMatch[1] : null;
 
       profiles.push({
@@ -321,7 +370,18 @@
         location,
         connectionDegree,
         profilePicturePayload: null,
-        raw: { firstName, lastName, vanityName, profileUrl, memberUrn, headline, profilePictureUrl, location, connectionDegree, nameFromSlug: true },
+        raw: {
+          firstName,
+          lastName,
+          vanityName,
+          profileUrl,
+          memberUrn,
+          headline,
+          profilePictureUrl,
+          location,
+          connectionDegree,
+          nameFromSlug: true,
+        },
       });
       console.log(
         `[LinkedIn Scraper] Extracted (from URL): ${firstName} ${lastName} - ${profileUrl}`
@@ -355,25 +415,29 @@
       const lastName = lastNameMatch ? lastNameMatch[1] : null;
 
       // Extract headline (often in description.text or headline fields)
-      const headlineMatch = context.match(/"description":\{"text":"([^"]+)"\}/) ||
-                           context.match(/"headline":"([^"]+)"/) ||
-                           context.match(/"text":"([^"]{10,100})"[\s\S]{0,50}?"accessibilityText"/);
+      const headlineMatch =
+        context.match(/"description":\{"text":"([^"]+)"\}/) ||
+        context.match(/"headline":"([^"]+)"/) ||
+        context.match(/"text":"([^"]{10,100})"[\s\S]{0,50}?"accessibilityText"/);
       const headline = headlineMatch ? headlineMatch[1] : null;
 
       // Extract profile picture URL (look for profile image artifacts)
-      const pictureMatch = context.match(/"rootUrl":"(https:\/\/media\.licdn\.com\/dms\/image\/[^"]+)"[\s\S]{0,500}?"artifacts"/) ||
-                          context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
+      const pictureMatch =
+        context.match(
+          /"rootUrl":"(https:\/\/media\.licdn\.com\/dms\/image\/[^"]+)"[\s\S]{0,500}?"artifacts"/
+        ) || context.match(/"profilePicture"[\s\S]{0,200}?"url":"(https:\/\/[^"]+)"/);
       const profilePictureUrl = pictureMatch ? pictureMatch[1] : null;
 
       // Extract location
-      const locationMatch = context.match(/"locationName":"([^"]+)"/) ||
-                           context.match(/"geoLocationName":"([^"]+)"/);
+      const locationMatch =
+        context.match(/"locationName":"([^"]+)"/) || context.match(/"geoLocationName":"([^"]+)"/);
       const location = locationMatch ? locationMatch[1] : null;
 
       // Extract connection degree
-      const degreeMatch = context.match(/"distance":\{"value":"([^"]+)"\}/) ||
-                         context.match(/"connectionDegree":"([^"]+)"/) ||
-                         context.match(/"degree":(\d)/);
+      const degreeMatch =
+        context.match(/"distance":\{"value":"([^"]+)"\}/) ||
+        context.match(/"connectionDegree":"([^"]+)"/) ||
+        context.match(/"degree":(\d)/);
       const connectionDegree = degreeMatch ? degreeMatch[1] : null;
 
       const profileUrl = `https://www.linkedin.com/in/${publicId}`;
@@ -389,7 +453,17 @@
         location,
         connectionDegree,
         profilePicturePayload: null,
-        raw: { firstName, lastName, vanityName: publicId, profileUrl, headline, profilePictureUrl, location, connectionDegree, fromFeed: true },
+        raw: {
+          firstName,
+          lastName,
+          vanityName: publicId,
+          profileUrl,
+          headline,
+          profilePictureUrl,
+          location,
+          connectionDegree,
+          fromFeed: true,
+        },
       });
     }
 
@@ -420,7 +494,7 @@
       const response = await fetch(url, {
         method: 'GET',
         redirect: 'follow',
-        credentials: 'include'
+        credentials: 'include',
       });
 
       // Check the final URL after redirects
@@ -436,7 +510,7 @@
         return {
           url: `https://www.linkedin.com/in/${resolvedVanity}`,
           vanityName: resolvedVanity,
-          resolved: true
+          resolved: true,
         };
       }
 
@@ -447,7 +521,7 @@
       const patterns = [
         /"publicIdentifier":"([^"]+)"/,
         /"vanityName":"([^"]+)"/,
-        /linkedin\.com\/in\/([a-z0-9-]+)['"\/\?]/i,  // Look for real vanity in links
+        /linkedin\.com\/in\/([a-z0-9-]+)['"\/\?]/i, // Look for real vanity in links
         /<link[^>]+rel="canonical"[^>]+href="[^"]*\/in\/([^"\/\?]+)"/i,
         /<meta[^>]+property="og:url"[^>]+content="[^"]*\/in\/([^"\/\?]+)"/i,
       ];
@@ -459,60 +533,22 @@
           return {
             url: `https://www.linkedin.com/in/${match[1]}`,
             vanityName: match[1],
-            resolved: true
+            resolved: true,
           };
         }
       }
 
       // Log a sample for debugging if no match found
-      console.log(`[LinkedIn Scraper] Could not find vanity in page. Sample:`, text.substring(0, 500));
+      console.log(
+        '[LinkedIn Scraper] Could not find vanity in page. Sample:',
+        text.substring(0, 500)
+      );
     } catch (err) {
       console.log(`[LinkedIn Scraper] Failed to resolve ${url}:`, err.message);
     }
 
     // Return original if resolution failed
     return { url, vanityName: currentVanity, resolved: false };
-  }
-
-  // Batch resolve multiple profile URLs (with rate limiting)
-  async function resolveProfileUrls(profiles) {
-    const BATCH_SIZE = 3; // Resolve 3 at a time to avoid rate limiting
-    const DELAY_MS = 100; // Small delay between batches
-
-    const resolved = [...profiles];
-    const toResolve = profiles
-      .map((p, idx) => ({ idx, profile: p }))
-      .filter(({ profile }) => isMemberUrn(profile.vanityName));
-
-    console.log(`[LinkedIn Scraper] Resolving ${toResolve.length} member URN profiles...`);
-
-    for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
-      const batch = toResolve.slice(i, i + BATCH_SIZE);
-
-      await Promise.all(batch.map(async ({ idx, profile }) => {
-        const result = await resolveProfileUrl(profile.profileUrl);
-        if (result.resolved) {
-          resolved[idx] = {
-            ...profile,
-            vanityName: result.vanityName,
-            profileUrl: result.url,
-            raw: { ...profile.raw, originalVanity: profile.vanityName, resolvedVanity: result.vanityName }
-          };
-        }
-      }));
-
-      // Small delay between batches
-      if (i + BATCH_SIZE < toResolve.length) {
-        await new Promise(r => setTimeout(r, DELAY_MS));
-      }
-    }
-
-    const resolvedCount = resolved.filter((p, i) =>
-      profiles[i].vanityName !== p.vanityName
-    ).length;
-    console.log(`[LinkedIn Scraper] Resolved ${resolvedCount}/${toResolve.length} member URN profiles`);
-
-    return resolved;
   }
 
   function extractReactionProfiles(text) {
@@ -541,7 +577,11 @@
           }
         }
       }
-      console.log('[LinkedIn Scraper] Built URN->publicId map:', Object.keys(urnToPublicId).length, 'entries');
+      console.log(
+        '[LinkedIn Scraper] Built URN->publicId map:',
+        Object.keys(urnToPublicId).length,
+        'entries'
+      );
 
       for (const item of included) {
         if (!item.reactorLockup) continue;
@@ -573,9 +613,7 @@
           }
         }
 
-        const profileUrl = vanityName
-          ? `https://www.linkedin.com/in/${vanityName}`
-          : navigationUrl;
+        const profileUrl = vanityName ? `https://www.linkedin.com/in/${vanityName}` : navigationUrl;
 
         // Extract member URN from actorUrn
         const memberUrnMatch = actorUrn?.match(/fsd_profile:([^,\)]+)/);
@@ -588,11 +626,13 @@
           const vectorImage = attr.detailData?.nonEntityProfilePicture?.vectorImage;
           if (vectorImage?.rootUrl && vectorImage?.artifacts?.length > 0) {
             // Get the largest artifact
-            const largestArtifact = vectorImage.artifacts.reduce((prev, curr) =>
-              (curr.width > (prev?.width || 0)) ? curr : prev
-            , null);
+            const largestArtifact = vectorImage.artifacts.reduce(
+              (prev, curr) => (curr.width > (prev?.width || 0) ? curr : prev),
+              null
+            );
             if (largestArtifact) {
-              profilePictureUrl = vectorImage.rootUrl + largestArtifact.fileIdentifyingUrlPathSegment;
+              profilePictureUrl =
+                vectorImage.rootUrl + largestArtifact.fileIdentifyingUrlPathSegment;
             }
             break;
           }
@@ -614,7 +654,16 @@
           location: null, // Not available in reactions
           connectionDegree: null, // Not available in reactions
           profilePicturePayload: null,
-          raw: { firstName, lastName, vanityName, profileUrl, memberUrn, headline, profilePictureUrl, fromReaction: true },
+          raw: {
+            firstName,
+            lastName,
+            vanityName,
+            profileUrl,
+            memberUrn,
+            headline,
+            profilePictureUrl,
+            fromReaction: true,
+          },
         });
       }
     } catch (err) {
@@ -665,7 +714,15 @@
         location: null,
         connectionDegree: null,
         profilePicturePayload: null,
-        raw: { firstName, lastName, vanityName, profileUrl, headline, fromReaction: true, regexFallback: true },
+        raw: {
+          firstName,
+          lastName,
+          vanityName,
+          profileUrl,
+          headline,
+          fromReaction: true,
+          regexFallback: true,
+        },
       });
     }
 

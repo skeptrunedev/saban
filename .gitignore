@@ -31,3 +31,6 @@ coverage/
 
 # Wrangler
 .wrangler/
+
+# Claude agents
+.agents/
