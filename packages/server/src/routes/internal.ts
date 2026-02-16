@@ -4,6 +4,7 @@ import {
   upsertProfileEnrichment,
   upsertQualificationResult,
   getQualificationById,
+  upsertProfileEnrichmentByVanity,
 } from '../db.js';
 
 function getInternalKey() {
@@ -74,7 +75,7 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
       }),
     }
   )
-  // Store enrichment data
+  // Store enrichment data by profile ID
   .post(
     '/enrichments',
     async ({ body }) => {
@@ -108,6 +109,57 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
     {
       body: t.Object({
         profileId: t.Number(),
+        connectionCount: t.Optional(t.Number()),
+        followerCount: t.Optional(t.Number()),
+        experience: t.Optional(t.Any()),
+        education: t.Optional(t.Any()),
+        skills: t.Optional(t.Array(t.String())),
+        certifications: t.Optional(t.Any()),
+        languages: t.Optional(t.Any()),
+        about: t.Optional(t.String()),
+        rawResponse: t.Optional(t.Any()),
+      }),
+    }
+  )
+  // Store enrichment data by vanity name (for cron worker)
+  .post(
+    '/enrichments/by-vanity',
+    async ({ body, set }) => {
+      const {
+        vanityName,
+        connectionCount,
+        followerCount,
+        experience,
+        education,
+        skills,
+        certifications,
+        languages,
+        about,
+        rawResponse,
+      } = body;
+
+      const result = await upsertProfileEnrichmentByVanity(vanityName, {
+        connectionCount,
+        followerCount,
+        experience,
+        education,
+        skills,
+        certifications,
+        languages,
+        about,
+        rawResponse,
+      });
+
+      if (!result) {
+        set.status = 404;
+        return { success: false, error: `No profile found with vanity name: ${vanityName}` };
+      }
+
+      return { success: true, data: { profilesUpdated: result.profilesUpdated } };
+    },
+    {
+      body: t.Object({
+        vanityName: t.String(),
         connectionCount: t.Optional(t.Number()),
         followerCount: t.Optional(t.Number()),
         experience: t.Optional(t.Any()),

@@ -22,17 +22,9 @@
     }
   ],
 
-  // Queue configuration
-  "queues": {
-    "consumers": [
-      {
-        "queue": "saban-enrichment-queue",
-        "max_batch_size": 10,
-        "max_batch_timeout": 30,
-        "max_retries": 3,
-        "dead_letter_queue": "saban-enrichment-dlq"
-      }
-    ]
+  // Cron trigger - runs every minute
+  "triggers": {
+    "crons": ["* * * * *"]
   },
 
   // Environment variables (secrets should be set via wrangler secret)

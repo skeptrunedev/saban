@@ -690,6 +690,38 @@ export async function upsertProfileEnrichment(
   };
 }
 
+export async function upsertProfileEnrichmentByVanity(
+  vanityName: string,
+  data: {
+    connectionCount?: number;
+    followerCount?: number;
+    experience?: unknown;
+    education?: unknown;
+    skills?: string[];
+    certifications?: unknown;
+    languages?: unknown;
+    about?: string;
+    rawResponse?: unknown;
+  }
+): Promise<{ profilesUpdated: number } | null> {
+  // Find all profiles with this vanity name (could be multiple from different sources)
+  const profileResult = await pool.query(
+    `SELECT id FROM similar_profiles WHERE vanity_name = $1`,
+    [vanityName.toLowerCase()]
+  );
+
+  if (profileResult.rows.length === 0) {
+    return null;
+  }
+
+  // Upsert enrichment for each matching profile
+  for (const row of profileResult.rows) {
+    await upsertProfileEnrichment(row.id, data);
+  }
+
+  return { profilesUpdated: profileResult.rows.length };
+}
+
 export async function getProfileEnrichment(profileId: number): Promise<ProfileEnrichment | null> {
   const result = await pool.query(
     `SELECT * FROM profile_enrichments WHERE profile_id = $1`,
@@ -896,6 +928,25 @@ export async function getEnrichmentJobs(organizationId: string): Promise<Enrichm
   const result = await pool.query(
     `SELECT * FROM enrichment_jobs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50`,
     [organizationId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    snapshot_id: row.snapshot_id,
+    profile_ids: row.profile_ids,
+    qualification_id: row.qualification_id,
+    organization_id: row.organization_id,
+    status: row.status,
+    error: row.error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+  }));
+}
+
+export async function getPendingScrapingJobs(): Promise<EnrichmentJob[]> {
+  const result = await pool.query(
+    `SELECT * FROM enrichment_jobs WHERE status = 'scraping' ORDER BY created_at ASC LIMIT 100`
   );
 
   return result.rows.map((row) => ({

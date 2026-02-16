@@ -1,30 +1,12 @@
 // Environment bindings for the worker
 export interface Env {
-  // Queue binding
-  ENRICHMENT_QUEUE: Queue<EnrichmentJobMessage>;
-
   // R2 bucket for BrightData results
   BRIGHTDATA_RESULTS: R2Bucket;
 
   // Secrets (set via wrangler secret)
-  BRIGHTDATA_API_KEY: string;
-  BRIGHTDATA_DATASET_ID: string;
   ANTHROPIC_API_KEY: string;
   SERVER_URL: string; // URL to call back to the server
   SERVER_INTERNAL_KEY: string; // Secret key for internal API calls
-
-  // R2 credentials for BrightData delivery (set via wrangler secret)
-  R2_ACCESS_KEY_ID: string;
-  R2_SECRET_ACCESS_KEY: string;
-}
-
-// Message format for the queue
-export interface EnrichmentJobMessage {
-  jobId: string;
-  profileIds: number[];
-  profileUrls: string[];
-  qualificationId?: number;
-  organizationId: string;
 }
 
 // BrightData types
@@ -86,25 +68,4 @@ export interface BrightDataLanguage {
 export interface ScrapeError {
   url: string;
   error: string;
-}
-
-// Qualification criteria
-export interface QualificationCriteria {
-  minConnections?: number;
-  minFollowers?: number;
-  requiredSkills?: string[];
-  preferredSkills?: string[];
-  minExperienceYears?: number;
-  requiredTitles?: string[];
-  preferredTitles?: string[];
-  requiredCompanies?: string[];
-  preferredCompanies?: string[];
-  requiredEducation?: string[];
-  customPrompt?: string;
-}
-
-export interface JobQualification {
-  id: number;
-  name: string;
-  criteria: QualificationCriteria;
 }
