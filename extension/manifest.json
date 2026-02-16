@@ -4,7 +4,15 @@
   "version": "1.0.0",
   "description": "Captures LinkedIn profiles data for lead generation",
   "permissions": ["activeTab", "storage"],
-  "host_permissions": ["https://www.linkedin.com/*", "http://localhost:3847/*", "https://saban-api.skeptrune.com/*"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://media.licdn.com/*",
+    "https://media-exp1.licdn.com/*",
+    "https://media-exp2.licdn.com/*",
+    "https://static.licdn.com/*",
+    "http://localhost:3847/*",
+    "https://saban-api.skeptrune.com/*"
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

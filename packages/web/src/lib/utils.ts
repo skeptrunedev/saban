@@ -19,3 +19,32 @@ export function parseUTCTimestamp(timestamp: string | Date | unknown): Date {
   }
   return new Date(timestamp);
 }
+
+/**
+ * Proxy an image URL through our server to avoid CORS issues.
+ * Only proxies LinkedIn CDN URLs, returns original URL for others.
+ */
+export function getProxiedImageUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+
+  // Check if this is a LinkedIn CDN URL that needs proxying
+  const linkedinDomains = [
+    'media.licdn.com',
+    'media-exp1.licdn.com',
+    'media-exp2.licdn.com',
+    'static.licdn.com',
+  ];
+  try {
+    const urlObj = new URL(url);
+    if (linkedinDomains.some((domain) => urlObj.hostname.endsWith(domain))) {
+      // Base64 encode the URL and proxy it
+      const encoded = btoa(url);
+      return `/api/image-proxy?url=${encodeURIComponent(encoded)}`;
+    }
+  } catch {
+    // Invalid URL, return as-is
+  }
+
+  // Return original URL for data URLs, non-LinkedIn URLs, etc.
+  return url;
+}

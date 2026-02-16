@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "saban-scoring-worker",
+  "account_id": "2f016a113dca4bbf3eda769b3f7d12fd",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Observability
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  },
+
+  // Cron trigger - runs every 5 minutes
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  // Environment variables (secrets should be set via wrangler secret)
+  "vars": {
+    "ENVIRONMENT": "production"
+  }
+}

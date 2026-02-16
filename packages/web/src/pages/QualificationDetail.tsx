@@ -174,9 +174,7 @@ export function QualificationDetail() {
               }
               placeholder="e.g., 500"
             />
-            <p className="text-xs text-muted-foreground">
-              Minimum LinkedIn connections required
-            </p>
+            <p className="text-xs text-muted-foreground">Minimum LinkedIn connections required</p>
           </div>
 
           <div className="space-y-2">
@@ -192,9 +190,7 @@ export function QualificationDetail() {
               }
               placeholder="e.g., 1000"
             />
-            <p className="text-xs text-muted-foreground">
-              Minimum LinkedIn followers required
-            </p>
+            <p className="text-xs text-muted-foreground">Minimum LinkedIn followers required</p>
           </div>
         </div>
       </div>
@@ -227,7 +223,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 requiredTitles: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
@@ -246,15 +245,16 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 preferredTitles: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
             placeholder="e.g., VP Engineering, Director"
           />
-          <p className="text-xs text-muted-foreground">
-            Nice to have, will improve score
-          </p>
+          <p className="text-xs text-muted-foreground">Nice to have, will improve score</p>
         </div>
 
         <div className="space-y-2">
@@ -265,7 +265,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 requiredCompanies: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
@@ -281,7 +284,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 preferredCompanies: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
@@ -301,7 +307,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 requiredSkills: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
@@ -320,7 +329,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 preferredSkills: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }
@@ -336,7 +348,10 @@ export function QualificationDetail() {
             onChange={(e) =>
               updateCriteria({
                 requiredEducation: e.target.value
-                  ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
               })
             }

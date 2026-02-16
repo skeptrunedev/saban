@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Profile, ProfilesQuery } from '@saban/shared';
+import type { Profile, ProfileWithScore, ProfilesQuery } from '@saban/shared';
 import { useProfiles, useTags, useStartEnrichment, useQualifications } from '@/lib/queries';
 import { SearchBar } from '@/components/SearchBar';
 import { FilterPanel } from '@/components/FilterPanel';
@@ -39,7 +39,7 @@ export function Dashboard() {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         for (const [key, value] of Object.entries(updates)) {
-          if (value === undefined || value === '' || value === '1' && key === 'page') {
+          if (value === undefined || value === '' || (value === '1' && key === 'page')) {
             next.delete(key);
           } else {
             next.set(key, value);
@@ -79,7 +79,7 @@ export function Dashboard() {
     updateParams({ tags: tags.length ? tags.join(',') : undefined, page: '1' });
   };
 
-  const handleProfileClick = (profile: Profile) => {
+  const handleProfileClick = (profile: ProfileWithScore) => {
     navigate(`/leads/${profile.id}`);
   };
 
@@ -116,9 +116,7 @@ export function Dashboard() {
           <p className="text-muted-foreground">
             {total} total leads
             {selectedIds.length > 0 && (
-              <span className="ml-2 text-primary font-medium">
-                ({selectedIds.length} selected)
-              </span>
+              <span className="ml-2 text-primary font-medium">({selectedIds.length} selected)</span>
             )}
             {isFetching && !isLoading && <span className="ml-2 text-xs">(updating...)</span>}
           </p>

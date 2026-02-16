@@ -40,14 +40,61 @@ new Elysia()
   )
   .use(
     cors({
-      origin: [
-        'http://localhost:5173',
-        'https://saban.skeptrune.com',
-        /^chrome-extension:\/\//,
-      ],
+      origin: ['http://localhost:5173', 'https://saban.skeptrune.com', /^chrome-extension:\/\//],
       credentials: true,
     })
   )
+  // Image proxy (public, no auth required) - must be before auth middleware
+  .get('/api/image-proxy', async ({ query, set }) => {
+    const url = query.url;
+    if (!url || typeof url !== 'string') {
+      set.status = 400;
+      return { error: 'url parameter required' };
+    }
+
+    try {
+      // Decode the URL (it should be base64 encoded)
+      const decodedUrl = Buffer.from(url, 'base64').toString('utf-8');
+
+      // Only allow proxying from known image domains
+      const allowedDomains = [
+        'media.licdn.com',
+        'media-exp1.licdn.com',
+        'media-exp2.licdn.com',
+        'static.licdn.com',
+        'platform-lookaside.fbsbx.com',
+      ];
+
+      const urlObj = new URL(decodedUrl);
+      if (!allowedDomains.some((domain) => urlObj.hostname.endsWith(domain))) {
+        set.status = 403;
+        return { error: 'Domain not allowed' };
+      }
+
+      const response = await fetch(decodedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      if (!response.ok) {
+        set.status = response.status;
+        return { error: 'Failed to fetch image' };
+      }
+
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      set.headers['Content-Type'] = contentType;
+      set.headers['Cache-Control'] = 'public, max-age=86400'; // Cache for 1 day
+
+      return buffer;
+    } catch (err) {
+      console.error('Image proxy error:', err);
+      set.status = 500;
+      return { error: 'Failed to proxy image' };
+    }
+  })
   // Routes
   .use(authRoutes)
   .use(profilesRoutes)

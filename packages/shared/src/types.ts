@@ -90,8 +90,16 @@ export interface ProfilesQuery {
   search?: string;
   status?: Profile['status'];
   tags?: string[];
-  sortBy?: 'captured_at' | 'first_name' | 'last_name';
+  sortBy?: 'captured_at' | 'first_name' | 'last_name' | 'best_score';
   sortOrder?: 'asc' | 'desc';
+  qualificationId?: number; // Filter by profiles with scores for this qualification
+}
+
+// Profile with enrichment and qualification status (for list views)
+export interface ProfileWithScore extends Profile {
+  best_score: number | null;
+  best_score_passed: boolean | null;
+  is_enriched: boolean;
 }
 
 // API Response types
@@ -238,7 +246,13 @@ export interface QualificationResult {
 
 // ==================== ENRICHMENT JOB TYPES ====================
 
-export type EnrichmentJobStatus = 'pending' | 'scraping' | 'enriching' | 'qualifying' | 'completed' | 'failed';
+export type EnrichmentJobStatus =
+  | 'pending'
+  | 'scraping'
+  | 'enriching'
+  | 'qualifying'
+  | 'completed'
+  | 'failed';
 
 export interface EnrichmentJob {
   id: string;

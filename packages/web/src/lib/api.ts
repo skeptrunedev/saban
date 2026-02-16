@@ -1,7 +1,8 @@
 import type {
   Profile,
+  ProfileWithScore,
   ProfilesQuery,
-  ProfilesResponse,
+  PaginatedResponse,
   UpdateProfileRequest,
   User,
   Organization,
@@ -17,6 +18,8 @@ import type {
   QualificationResult,
   EnrichmentJob,
 } from '@saban/shared';
+
+export type ProfilesResponse = PaginatedResponse<ProfileWithScore>;
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -143,6 +146,7 @@ export async function getProfiles(query: ProfilesQuery): Promise<ProfilesRespons
   if (query.tags?.length) params.set('tags', query.tags.join(','));
   if (query.sortBy) params.set('sortBy', query.sortBy);
   if (query.sortOrder) params.set('sortOrder', query.sortOrder);
+  if (query.qualificationId) params.set('qualificationId', String(query.qualificationId));
 
   const res = await fetchApi<{ success: boolean; data: ProfilesResponse }>(
     `/profiles?${params.toString()}`
@@ -205,10 +209,13 @@ export async function updateQualification(
   id: number,
   data: UpdateQualificationRequest
 ): Promise<JobQualification> {
-  const res = await fetchApi<{ success: boolean; data: JobQualification }>(`/qualifications/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
+  const res = await fetchApi<{ success: boolean; data: JobQualification }>(
+    `/qualifications/${id}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }
+  );
   return res.data;
 }
 

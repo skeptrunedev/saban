@@ -1,70 +1,124 @@
-// Anthropic Claude API client for AI-powered qualification scoring
-
 import Anthropic from '@anthropic-ai/sdk';
-import type { QualificationCriteria } from '@saban/shared';
+import type { Env, ProfileToScore, BrightDataProfile, QualificationCriteria, ScoringResult } from './types';
 
-// BrightData raw response (actual field names from API)
-interface BrightDataRawProfile {
-  url?: string;
-  name?: string;
-  first_name?: string;
-  last_name?: string;
-  headline?: string;
-  location?: string;
-  about?: string;
-  connections?: number;
-  followers?: number;
-  experience?: Array<{
-    title?: string;
-    company?: string;
-    start_date?: string;
-    end_date?: string;
-    duration?: string;
-  }>;
-  education?: Array<{
-    school?: string;
-    degree?: string;
-    field_of_study?: string;
-  }>;
-  skills?: string[];
-  certifications?: Array<{
-    name?: string;
-    issuing_organization?: string;
-  }>;
-  languages?: Array<{
-    language?: string;
-    proficiency?: string;
-  }>;
-}
+export default {
+  /**
+   * Cron handler - runs every 5 minutes to score profiles
+   */
+  async scheduled(
+    _event: ScheduledEvent,
+    env: Env,
+    _ctx: ExecutionContext
+  ): Promise<void> {
+    console.log('Scoring cron: Starting');
+    await runScoring(env);
+    console.log('Scoring cron: Finished');
+  },
 
-let anthropicClient: Anthropic | null = null;
+  /**
+   * HTTP handler for manual testing/health checks
+   */
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
 
-function getClient(): Anthropic {
-  if (!anthropicClient) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
+    if (url.pathname === '/health') {
+      return new Response(JSON.stringify({ status: 'ok', worker: 'saban-scoring-worker' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
-    anthropicClient = new Anthropic({ apiKey });
+
+    // Manual trigger for testing
+    if (url.pathname === '/trigger') {
+      const result = await runScoring(env);
+      return new Response(JSON.stringify(result), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response('Not found', { status: 404 });
+  },
+};
+
+async function runScoring(env: Env): Promise<{ scored: number; failed: number; total: number }> {
+  // Get profiles that need scoring from server
+  const profilesToScore = await getProfilesToScore(env);
+
+  if (profilesToScore.length === 0) {
+    console.log('No profiles to score');
+    return { scored: 0, failed: 0, total: 0 };
   }
-  return anthropicClient;
+
+  console.log(`Scoring ${profilesToScore.length} profiles`);
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  let scored = 0;
+  let failed = 0;
+
+  for (const profile of profilesToScore) {
+    try {
+      const result = await scoreProfile(client, profile.rawResponse, profile.criteria);
+
+      await storeResult(env, profile.profileId, profile.qualificationId, result);
+
+      console.log(
+        `Profile ${profile.profileId} (${profile.qualificationName}): score=${result.score}, passed=${result.passed}`
+      );
+      scored++;
+    } catch (err) {
+      console.error(`Failed to score profile ${profile.profileId}:`, err);
+      failed++;
+    }
+  }
+
+  return { scored, failed, total: profilesToScore.length };
 }
 
-export interface ScoringResult {
-  score: number;
-  reasoning: string;
-  passed: boolean;
+async function getProfilesToScore(env: Env): Promise<ProfileToScore[]> {
+  const response = await fetch(`${env.SERVER_URL}/api/internal/scoring/pending`, {
+    headers: {
+      'X-Internal-Key': env.SERVER_INTERNAL_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get profiles to score: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { success: boolean; data: ProfileToScore[] };
+  return data.data || [];
 }
 
-/**
- * Score a LinkedIn profile against qualification criteria using Claude Haiku
- */
-export async function scoreProfileWithAI(
-  profile: BrightDataRawProfile,
+async function storeResult(
+  env: Env,
+  profileId: number,
+  qualificationId: number,
+  result: ScoringResult
+): Promise<void> {
+  const response = await fetch(`${env.SERVER_URL}/api/internal/qualifications/result`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Key': env.SERVER_INTERNAL_KEY,
+    },
+    body: JSON.stringify({
+      profileId,
+      qualificationId,
+      score: result.score,
+      reasoning: result.reasoning,
+      passed: result.passed,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to store result: ${response.status}`);
+  }
+}
+
+async function scoreProfile(
+  client: Anthropic,
+  profile: BrightDataProfile,
   criteria: QualificationCriteria
 ): Promise<ScoringResult> {
-  const client = getClient();
-
   const profileSummary = buildProfileSummary(profile);
   const criteriaSummary = buildCriteriaSummary(criteria);
 
@@ -107,22 +161,15 @@ Respond with a JSON object containing score, reasoning, and passed fields.`;
   const response = await client.messages.create({
     model: 'claude-3-5-haiku-latest',
     max_tokens: 500,
-    messages: [
-      {
-        role: 'user',
-        content: userPrompt,
-      },
-    ],
+    messages: [{ role: 'user', content: userPrompt }],
     system: systemPrompt,
   });
 
-  // Extract text content from response
   const textContent = response.content.find((block) => block.type === 'text');
   if (!textContent || textContent.type !== 'text') {
     throw new Error('No text response from Claude');
   }
 
-  // Parse JSON response
   const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error('Could not parse JSON from Claude response');
@@ -130,7 +177,6 @@ Respond with a JSON object containing score, reasoning, and passed fields.`;
 
   const result = JSON.parse(jsonMatch[0]) as ScoringResult;
 
-  // Validate and normalize
   return {
     score: Math.max(0, Math.min(100, Math.round(result.score))),
     reasoning: result.reasoning || 'No reasoning provided',
@@ -138,7 +184,7 @@ Respond with a JSON object containing score, reasoning, and passed fields.`;
   };
 }
 
-function buildProfileSummary(profile: BrightDataRawProfile): string {
+function buildProfileSummary(profile: BrightDataProfile): string {
   const lines: string[] = [];
 
   lines.push(`**Name:** ${profile.name || `${profile.first_name} ${profile.last_name}`}`);
@@ -148,9 +194,7 @@ function buildProfileSummary(profile: BrightDataRawProfile): string {
   lines.push(`**Followers:** ${profile.followers?.toLocaleString() || 'Unknown'}`);
 
   if (profile.about) {
-    lines.push(
-      `\n**About:**\n${profile.about.substring(0, 500)}${profile.about.length > 500 ? '...' : ''}`
-    );
+    lines.push(`\n**About:**\n${profile.about.substring(0, 500)}${profile.about.length > 500 ? '...' : ''}`);
   }
 
   if (profile.experience && profile.experience.length > 0) {
@@ -178,9 +222,7 @@ function buildProfileSummary(profile: BrightDataRawProfile): string {
   if (profile.certifications && profile.certifications.length > 0) {
     lines.push('\n**Certifications:**');
     for (const cert of profile.certifications.slice(0, 5)) {
-      lines.push(
-        `- ${cert.name}${cert.issuing_organization ? ` (${cert.issuing_organization})` : ''}`
-      );
+      lines.push(`- ${cert.name}${cert.issuing_organization ? ` (${cert.issuing_organization})` : ''}`);
     }
   }
 
@@ -217,9 +259,7 @@ function buildCriteriaSummary(criteria: QualificationCriteria): string {
   }
 
   if (criteria.requiredCompanies && criteria.requiredCompanies.length > 0) {
-    lines.push(
-      `- Required companies (must have worked at): ${criteria.requiredCompanies.join(', ')}`
-    );
+    lines.push(`- Required companies (must have worked at): ${criteria.requiredCompanies.join(', ')}`);
   }
 
   if (criteria.preferredCompanies && criteria.preferredCompanies.length > 0) {

@@ -1,9 +1,5 @@
 import { Elysia, t } from 'elysia';
-import {
-  getProfilesByIds,
-  getProfileEnrichment,
-  getProfileQualificationResults,
-} from '../db.js';
+import { getProfilesByIds, getProfileEnrichment, getProfileQualificationResults } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { triggerScrape, isBrightDataConfigured } from '../services/brightdata.js';
 
@@ -40,7 +36,9 @@ export const enrichmentRoutes = new Elysia({ prefix: '/api/enrichment' })
       const profileUrls = profiles.map((p) => p.profile_url);
       const snapshotId = await triggerScrape(profileUrls);
 
-      console.log(`Triggered BrightData scrape for ${profiles.length} profiles, snapshotId=${snapshotId}`);
+      console.log(
+        `Triggered BrightData scrape for ${profiles.length} profiles, snapshotId=${snapshotId}`
+      );
 
       return {
         success: true,

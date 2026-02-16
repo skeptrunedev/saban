@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Users, Target } from 'lucide-react';
+import { Plus, Pencil, Trash2, Target } from 'lucide-react';
 import type { QualificationCriteria } from '@saban/shared';
 
 export function Qualifications() {

@@ -27,8 +27,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'profiles_captured') {
     console.log('[Background] Received profiles:', message.profiles.length);
 
-    // POST to backend
-    sendToBackend(message.profiles, message.sourceProfileUrl, message.sourceSection)
+    // Check if any profiles need member URN resolution
+    const needsResolution = message.profiles.some(p => p.vanityName && p.vanityName.startsWith('ACo'));
+
+    const processAndSend = async () => {
+      let profiles = message.profiles;
+
+      // Resolve member URN profiles if needed
+      if (needsResolution) {
+        console.log('[Background] Some profiles need member URN resolution...');
+        profiles = await resolveProfiles(profiles);
+      }
+
+      // Send to backend
+      return sendToBackend(profiles, message.sourceProfileUrl, message.sourceSection);
+    };
+
+    processAndSend()
       .then((result) => {
         totalCaptured += result.inserted || 0;
         chrome.storage.local.set({
@@ -114,6 +129,51 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   }
 });
 
+// Convert image URL to data URL
+async function imageToDataUrl(url) {
+  if (!url || !url.startsWith('http')) return null;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.log('[Background] Failed to fetch image:', url, response.status);
+      return null;
+    }
+
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.log('[Background] Error converting image:', url, err.message);
+    return null;
+  }
+}
+
+// Convert profile picture URLs to data URLs (in batches to avoid overwhelming)
+async function convertProfileImages(profiles) {
+  const BATCH_SIZE = 5;
+  const converted = [...profiles];
+
+  for (let i = 0; i < converted.length; i += BATCH_SIZE) {
+    const batch = converted.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(async (profile, idx) => {
+      if (profile.profilePictureUrl && !profile.profilePicturePayload) {
+        const dataUrl = await imageToDataUrl(profile.profilePictureUrl);
+        if (dataUrl) {
+          converted[i + idx].profilePicturePayload = dataUrl;
+          console.log('[Background] Converted image for:', profile.vanityName || profile.firstName);
+        }
+      }
+    }));
+  }
+
+  return converted;
+}
+
 async function sendToBackend(profiles, sourceProfileUrl, sourceSection) {
   console.log('[Background] Sending to backend:', BACKEND_URL, 'section:', sourceSection);
 
@@ -124,10 +184,16 @@ async function sendToBackend(profiles, sourceProfileUrl, sourceSection) {
     throw new Error('Not authenticated. Please login via the extension popup.');
   }
 
+  // Convert profile pictures to data URLs before sending
+  console.log('[Background] Converting profile images...');
+  const profilesWithImages = await convertProfileImages(profiles);
+  const convertedCount = profilesWithImages.filter(p => p.profilePicturePayload).length;
+  console.log('[Background] Converted', convertedCount, 'of', profiles.length, 'profile images');
+
   const response = await fetch(`${BACKEND_URL}/profiles`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ profiles, sourceProfileUrl, sourceSection }),
+    body: JSON.stringify({ profiles: profilesWithImages, sourceProfileUrl, sourceSection }),
   });
 
   if (response.status === 401) {
@@ -148,6 +214,100 @@ async function sendToBackend(profiles, sourceProfileUrl, sourceSection) {
   const data = await response.json();
   console.log('[Background] Backend response:', data);
   return data;
+}
+
+// Resolve a member URN URL by opening a tab and watching for redirect
+async function resolveMemberUrnUrl(url) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      // Timeout after 5 seconds
+      cleanup();
+      resolve(null);
+    }, 5000);
+
+    let tabId = null;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(listener);
+      if (tabId) {
+        chrome.tabs.remove(tabId).catch(() => {});
+      }
+    };
+
+    const listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId !== tabId) return;
+
+      // Check if URL changed to a real vanity name
+      if (changeInfo.url) {
+        const match = changeInfo.url.match(/linkedin\.com\/in\/([^\/\?]+)/);
+        if (match && match[1] && !match[1].startsWith('ACo')) {
+          console.log('[Background] Resolved:', url, '->', match[1]);
+          cleanup();
+          resolve(match[1]);
+          return;
+        }
+      }
+
+      // Also check when page finishes loading
+      if (changeInfo.status === 'complete' && tab.url) {
+        const match = tab.url.match(/linkedin\.com\/in\/([^\/\?]+)/);
+        if (match && match[1] && !match[1].startsWith('ACo')) {
+          console.log('[Background] Resolved on complete:', url, '->', match[1]);
+          cleanup();
+          resolve(match[1]);
+          return;
+        }
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(listener);
+
+    // Create tab in background (not active)
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      tabId = tab.id;
+    });
+  });
+}
+
+// Resolve multiple member URN profiles
+async function resolveProfiles(profiles) {
+  const resolved = [...profiles];
+  const BATCH_SIZE = 3;
+
+  const toResolve = profiles
+    .map((p, idx) => ({ idx, profile: p }))
+    .filter(({ profile }) => profile.vanityName && profile.vanityName.startsWith('ACo'));
+
+  console.log('[Background] Resolving', toResolve.length, 'member URN profiles...');
+
+  for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
+    const batch = toResolve.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(batch.map(async ({ idx, profile }) => {
+      const vanityName = await resolveMemberUrnUrl(profile.profileUrl);
+      if (vanityName) {
+        resolved[idx] = {
+          ...profile,
+          vanityName,
+          profileUrl: `https://www.linkedin.com/in/${vanityName}`,
+          raw: { ...profile.raw, originalVanity: profile.vanityName, resolvedVanity: vanityName }
+        };
+      }
+    }));
+
+    // Small delay between batches
+    if (i + BATCH_SIZE < toResolve.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  const resolvedCount = resolved.filter((p, i) =>
+    profiles[i].vanityName !== p.vanityName
+  ).length;
+  console.log('[Background] Resolved', resolvedCount, '/', toResolve.length, 'profiles');
+
+  return resolved;
 }
 
 // Reset counter on extension load

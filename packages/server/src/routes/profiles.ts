@@ -39,7 +39,7 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
         };
       }
 
-      const { inserted, newProfileIds, newProfileUrls } = await insertProfiles(
+      const { inserted, newProfileUrls } = await insertProfiles(
         profiles,
         sourceProfileUrl,
         sourceSection,
@@ -56,7 +56,9 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
       if (isBrightDataConfigured() && newProfileUrls.length > 0) {
         try {
           const snapshotId = await triggerScrape(newProfileUrls);
-          console.log(`Auto-enrichment triggered for ${newProfileUrls.length} profiles, snapshotId=${snapshotId}`);
+          console.log(
+            `Auto-enrichment triggered for ${newProfileUrls.length} profiles, snapshotId=${snapshotId}`
+          );
         } catch (err) {
           console.error('Auto-enrichment trigger failed:', err);
           // Don't fail the insert if enrichment fails
@@ -96,6 +98,9 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
       tags: query.tags ? (query.tags as string).split(',') : undefined,
       sortBy: query.sortBy as ProfilesQuery['sortBy'],
       sortOrder: query.sortOrder as ProfilesQuery['sortOrder'],
+      qualificationId: query.qualificationId
+        ? parseInt(query.qualificationId as string, 10)
+        : undefined,
     };
 
     const { profiles, total } = await getProfiles(profilesQuery, organizationId);

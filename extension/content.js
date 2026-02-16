@@ -124,15 +124,11 @@
         const text = await clone.text();
         console.log(`[LinkedIn Scraper] Intercepted reactions, length: ${text.length}`);
 
-        // DEBUG: Check reactions response
-        console.log(`[LinkedIn Scraper] DEBUG REACTIONS - Has subtitle: ${text.includes('"subtitle"')}, Has title: ${text.includes('"title"')}`);
-        console.log('[LinkedIn Scraper] DEBUG REACTIONS - Sample:', text.substring(0, 1500));
-
         const profiles = extractReactionProfiles(text);
 
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from reactions`);
-          console.log('[LinkedIn Scraper] DEBUG REACTIONS - First profile:', JSON.stringify(profiles[0], null, 2));
+          // Member URN resolution happens in background.js via tab navigation
           window.postMessage(
             {
               type: 'LINKEDIN_SCRAPER_PROFILES',
@@ -400,6 +396,125 @@
     return profiles;
   }
 
+  // Check if a vanity name is actually a member URN (starts with ACo)
+  function isMemberUrn(vanityName) {
+    return vanityName && vanityName.startsWith('ACo');
+  }
+
+  // Resolve a member URN URL to the real vanity name by following redirects
+  // This works because LinkedIn redirects /in/ACoXXX to /in/real-vanity-name
+  async function resolveProfileUrl(url) {
+    if (!url) return { url, vanityName: null, resolved: false };
+
+    const vanityMatch = url.match(/linkedin\.com\/in\/([^\/\?]+)/);
+    const currentVanity = vanityMatch ? vanityMatch[1] : null;
+
+    // If it's not a member URN, no need to resolve
+    if (!isMemberUrn(currentVanity)) {
+      return { url, vanityName: currentVanity, resolved: false };
+    }
+
+    try {
+      // Make a GET request - LinkedIn will redirect to the real profile URL
+      // We need GET because HEAD doesn't trigger the redirect properly
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        credentials: 'include'
+      });
+
+      // Check the final URL after redirects
+      const finalUrl = response.url;
+      console.log(`[LinkedIn Scraper] Fetched ${url} -> final URL: ${finalUrl}`);
+
+      const resolvedMatch = finalUrl.match(/linkedin\.com\/in\/([^\/\?]+)/);
+      const resolvedVanity = resolvedMatch ? resolvedMatch[1] : null;
+
+      // Check if we got a real vanity name (not another member URN)
+      if (resolvedVanity && !isMemberUrn(resolvedVanity)) {
+        console.log(`[LinkedIn Scraper] Resolved ${currentVanity} -> ${resolvedVanity}`);
+        return {
+          url: `https://www.linkedin.com/in/${resolvedVanity}`,
+          vanityName: resolvedVanity,
+          resolved: true
+        };
+      }
+
+      // Try to find the real vanity name in the page content
+      const text = await response.text();
+
+      // Try multiple patterns to find the real vanity name
+      const patterns = [
+        /"publicIdentifier":"([^"]+)"/,
+        /"vanityName":"([^"]+)"/,
+        /linkedin\.com\/in\/([a-z0-9-]+)['"\/\?]/i,  // Look for real vanity in links
+        /<link[^>]+rel="canonical"[^>]+href="[^"]*\/in\/([^"\/\?]+)"/i,
+        /<meta[^>]+property="og:url"[^>]+content="[^"]*\/in\/([^"\/\?]+)"/i,
+      ];
+
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1] && !isMemberUrn(match[1])) {
+          console.log(`[LinkedIn Scraper] Found vanity via pattern ${pattern}: ${match[1]}`);
+          return {
+            url: `https://www.linkedin.com/in/${match[1]}`,
+            vanityName: match[1],
+            resolved: true
+          };
+        }
+      }
+
+      // Log a sample for debugging if no match found
+      console.log(`[LinkedIn Scraper] Could not find vanity in page. Sample:`, text.substring(0, 500));
+    } catch (err) {
+      console.log(`[LinkedIn Scraper] Failed to resolve ${url}:`, err.message);
+    }
+
+    // Return original if resolution failed
+    return { url, vanityName: currentVanity, resolved: false };
+  }
+
+  // Batch resolve multiple profile URLs (with rate limiting)
+  async function resolveProfileUrls(profiles) {
+    const BATCH_SIZE = 3; // Resolve 3 at a time to avoid rate limiting
+    const DELAY_MS = 100; // Small delay between batches
+
+    const resolved = [...profiles];
+    const toResolve = profiles
+      .map((p, idx) => ({ idx, profile: p }))
+      .filter(({ profile }) => isMemberUrn(profile.vanityName));
+
+    console.log(`[LinkedIn Scraper] Resolving ${toResolve.length} member URN profiles...`);
+
+    for (let i = 0; i < toResolve.length; i += BATCH_SIZE) {
+      const batch = toResolve.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(batch.map(async ({ idx, profile }) => {
+        const result = await resolveProfileUrl(profile.profileUrl);
+        if (result.resolved) {
+          resolved[idx] = {
+            ...profile,
+            vanityName: result.vanityName,
+            profileUrl: result.url,
+            raw: { ...profile.raw, originalVanity: profile.vanityName, resolvedVanity: result.vanityName }
+          };
+        }
+      }));
+
+      // Small delay between batches
+      if (i + BATCH_SIZE < toResolve.length) {
+        await new Promise(r => setTimeout(r, DELAY_MS));
+      }
+    }
+
+    const resolvedCount = resolved.filter((p, i) =>
+      profiles[i].vanityName !== p.vanityName
+    ).length;
+    console.log(`[LinkedIn Scraper] Resolved ${resolvedCount}/${toResolve.length} member URN profiles`);
+
+    return resolved;
+  }
+
   function extractReactionProfiles(text) {
     const profiles = [];
     const seen = new Set();
@@ -407,6 +522,26 @@
     try {
       const data = JSON.parse(text);
       const included = data.included || [];
+
+      // Build a map of member URN -> publicIdentifier from included items
+      const urnToPublicId = {};
+      for (const item of included) {
+        // Look for profile entities that have both entityUrn and publicIdentifier
+        if (item.publicIdentifier && item.entityUrn) {
+          const urnMatch = item.entityUrn.match(/fsd_profile:([^,\)]+)/);
+          if (urnMatch) {
+            urnToPublicId[urnMatch[1]] = item.publicIdentifier;
+          }
+        }
+        // Also check for miniProfile patterns
+        if (item.publicIdentifier && item['$type']?.includes('MiniProfile')) {
+          const urnMatch = item.entityUrn?.match(/fs_miniProfile:([^,\)]+)/);
+          if (urnMatch) {
+            urnToPublicId[urnMatch[1]] = item.publicIdentifier;
+          }
+        }
+      }
+      console.log('[LinkedIn Scraper] Built URN->publicId map:', Object.keys(urnToPublicId).length, 'entries');
 
       for (const item of included) {
         if (!item.reactorLockup) continue;
@@ -426,7 +561,18 @@
         // Get profile URL and extract vanity name
         const navigationUrl = lockup.navigationUrl || '';
         const vanityMatch = navigationUrl.match(/linkedin\.com\/in\/([^\/\?]+)/);
-        const vanityName = vanityMatch ? vanityMatch[1] : null;
+        let vanityName = vanityMatch ? vanityMatch[1] : null;
+
+        // If vanity name is a member URN, try to look it up in our map
+        if (isMemberUrn(vanityName)) {
+          const memberUrn = vanityName;
+          const publicId = urnToPublicId[memberUrn];
+          if (publicId) {
+            console.log(`[LinkedIn Scraper] Found publicId in data: ${memberUrn} -> ${publicId}`);
+            vanityName = publicId;
+          }
+        }
+
         const profileUrl = vanityName
           ? `https://www.linkedin.com/in/${vanityName}`
           : navigationUrl;
@@ -676,6 +822,7 @@
         const profiles = extractReactionProfiles(responseText);
         if (profiles.length > 0) {
           console.log(`[LinkedIn Scraper] Found ${profiles.length} profiles from reactions (XHR)`);
+          // Member URN resolution happens in background.js via tab navigation
           window.postMessage(
             {
               type: 'LINKEDIN_SCRAPER_PROFILES',

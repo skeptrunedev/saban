@@ -3,9 +3,11 @@ import {
   updateEnrichmentJob,
   upsertProfileEnrichment,
   upsertQualificationResult,
-  getQualificationById,
   upsertProfileEnrichmentByVanity,
+  getEnrichedProfilesForScoring,
+  getAllPendingScoring,
 } from '../db.js';
+import { scoreProfileWithAI } from '../services/anthropic.js';
 
 function getInternalKey() {
   return process.env.INTERNAL_API_KEY || process.env.JWT_SECRET || 'dev-internal-key';
@@ -20,7 +22,11 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
   .derive(({ request, set }) => {
     const key = request.headers.get('X-Internal-Key');
     const internalKey = getInternalKey();
-    console.log('[Internal] Auth check:', { key: key?.slice(0, 10), expected: internalKey?.slice(0, 10), match: key === internalKey });
+    console.log('[Internal] Auth check:', {
+      key: key?.slice(0, 10),
+      expected: internalKey?.slice(0, 10),
+      match: key === internalKey,
+    });
     if (key !== internalKey) {
       set.status = 401;
       return { authError: 'Invalid internal key' };
@@ -192,6 +198,11 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
       }),
     }
   )
+  // Get profiles pending scoring (for scoring worker)
+  .get('/scoring/pending', async () => {
+    const profiles = await getAllPendingScoring();
+    return { success: true, data: profiles };
+  })
   // Get qualification by ID (for worker to fetch criteria)
   .get('/qualifications/:id', async ({ params, set }) => {
     const id = parseInt(params.id, 10);
@@ -206,7 +217,73 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
     }
 
     return { success: true, data: result };
-  });
+  })
+  // Score all enriched profiles against a qualification
+  .post(
+    '/qualifications/:id/score',
+    async ({ params, body }) => {
+      const qualificationId = parseInt(params.id, 10);
+      const organizationId = body.organizationId;
+
+      const qualification = await getQualificationByIdInternal(qualificationId);
+
+      if (!qualification) {
+        return { success: false, error: 'Qualification not found' };
+      }
+
+      // Get all enriched profiles that haven't been scored yet
+      const profilesToScore = await getEnrichedProfilesForScoring(organizationId, qualificationId);
+
+      if (profilesToScore.length === 0) {
+        return {
+          success: true,
+          data: { message: 'No profiles to score', scored: 0, failed: 0 },
+        };
+      }
+
+      console.log(
+        `Scoring ${profilesToScore.length} profiles against qualification ${qualificationId}`
+      );
+
+      let scored = 0;
+      let failed = 0;
+
+      for (const { profileId, rawResponse } of profilesToScore) {
+        try {
+          const result = await scoreProfileWithAI(rawResponse as any, qualification.criteria);
+
+          await upsertQualificationResult(
+            profileId,
+            qualificationId,
+            result.score,
+            result.reasoning,
+            result.passed
+          );
+
+          console.log(`Profile ${profileId}: score=${result.score}, passed=${result.passed}`);
+          scored++;
+        } catch (err) {
+          console.error(`Failed to score profile ${profileId}:`, err);
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `Scored ${scored} profiles`,
+          scored,
+          failed,
+          total: profilesToScore.length,
+        },
+      };
+    },
+    {
+      body: t.Object({
+        organizationId: t.String(),
+      }),
+    }
+  );
 
 // Helper function to get qualification without org check (for internal use)
 import { pool } from '../db.js';

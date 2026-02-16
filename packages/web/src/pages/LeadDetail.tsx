@@ -35,7 +35,7 @@ import {
   XCircle,
   Loader2,
 } from 'lucide-react';
-import { parseUTCTimestamp } from '@/lib/utils';
+import { parseUTCTimestamp, getProxiedImageUrl } from '@/lib/utils';
 
 const statusColors: Record<Profile['status'], string> = {
   new: 'bg-blue-100 text-blue-800',
@@ -89,7 +89,10 @@ export function LeadDetail() {
   }
 
   const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Unknown';
-  const profileImage = profile.profile_picture_url || profile.profile_picture_payload;
+  const enrichmentAvatar = enrichment?.raw_response?.avatar as string | undefined;
+  const rawProfileImage =
+    profile.profile_picture_url || profile.profile_picture_payload || enrichmentAvatar;
+  const profileImage = getProxiedImageUrl(rawProfileImage);
 
   return (
     <div className="space-y-6">
@@ -137,8 +140,7 @@ export function LeadDetail() {
                   )}
                   {profile.vanity_name && (
                     <span className="flex items-center gap-1">
-                      <Link2 className="h-4 w-4" />
-                      @{profile.vanity_name}
+                      <Link2 className="h-4 w-4" />@{profile.vanity_name}
                     </span>
                   )}
                 </div>
@@ -397,9 +399,7 @@ export function LeadDetail() {
                   <div
                     key={result.id}
                     className={`rounded-lg border p-4 ${
-                      result.passed
-                        ? 'border-green-200 bg-green-50'
-                        : 'border-red-200 bg-red-50'
+                      result.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -432,9 +432,7 @@ export function LeadDetail() {
               </div>
             ) : (
               <div className="text-center py-4">
-                <p className="text-sm text-muted-foreground mb-2">
-                  No qualification scores yet
-                </p>
+                <p className="text-sm text-muted-foreground mb-2">No qualification scores yet</p>
                 <p className="text-xs text-muted-foreground">
                   {qualifications && qualifications.length > 0
                     ? 'Select a qualification to score this profile'

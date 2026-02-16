@@ -2,6 +2,7 @@ import pg from 'pg';
 import type {
   Profile,
   ProfilesQuery,
+  ProfileWithScore,
   UpdateProfileRequest,
   User,
   Organization,
@@ -216,7 +217,12 @@ export async function insertProfiles(
       try {
         // First, try to update existing records that have null fields we now have data for
         // This supplements records from other sources (e.g., PYMK) with data from direct views
-        if (profile.headline || profile.profilePictureUrl || profile.location || profile.connectionDegree) {
+        if (
+          profile.headline ||
+          profile.profilePictureUrl ||
+          profile.location ||
+          profile.connectionDegree
+        ) {
           const updateResult = await client.query(
             `UPDATE similar_profiles SET
               headline = COALESCE(headline, $1),
@@ -307,7 +313,7 @@ export async function getProfileCount(organizationId?: string): Promise<number> 
 export async function getProfiles(
   query: ProfilesQuery,
   organizationId?: string
-): Promise<{ profiles: Profile[]; total: number }> {
+): Promise<{ profiles: ProfileWithScore[]; total: number }> {
   const {
     page = 1,
     limit = 50,
@@ -316,6 +322,7 @@ export async function getProfiles(
     tags,
     sortBy = 'captured_at',
     sortOrder = 'desc',
+    qualificationId,
   } = query;
 
   const offset = (page - 1) * limit;
@@ -325,51 +332,82 @@ export async function getProfiles(
 
   // Always filter by organization if provided
   if (organizationId) {
-    conditions.push(`organization_id = $${paramIndex}`);
+    conditions.push(`sp.organization_id = $${paramIndex}`);
     params.push(organizationId);
     paramIndex++;
   }
 
   if (search) {
     conditions.push(
-      `(first_name ILIKE $${paramIndex} OR last_name ILIKE $${paramIndex} OR vanity_name ILIKE $${paramIndex})`
+      `(sp.first_name ILIKE $${paramIndex} OR sp.last_name ILIKE $${paramIndex} OR sp.vanity_name ILIKE $${paramIndex})`
     );
     params.push(`%${search}%`);
     paramIndex++;
   }
 
   if (status) {
-    conditions.push(`status = $${paramIndex}`);
+    conditions.push(`sp.status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
 
   if (tags && tags.length > 0) {
-    conditions.push(`tags && $${paramIndex}`);
+    conditions.push(`sp.tags && $${paramIndex}`);
     params.push(tags);
     paramIndex++;
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const allowedSortColumns = ['captured_at', 'first_name', 'last_name'];
+  // Build the score subquery - get best score (can be filtered by qualification)
+  let scoreSubquery: string;
+  if (qualificationId) {
+    scoreSubquery = `
+      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed
+      FROM qualification_results qr
+      WHERE qr.qualification_id = $${paramIndex}
+    `;
+    params.push(qualificationId);
+    paramIndex++;
+  } else {
+    // Get the best (highest) score across all qualifications
+    scoreSubquery = `
+      SELECT qr.profile_id, MAX(qr.score) as best_score,
+             bool_or(qr.passed) as best_score_passed
+      FROM qualification_results qr
+      GROUP BY qr.profile_id
+    `;
+  }
+
+  const allowedSortColumns = ['captured_at', 'first_name', 'last_name', 'best_score'];
   const safeSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'captured_at';
   const safeSortOrder = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
+  // For score sorting, put nulls last
+  const nullsClause = safeSortBy === 'best_score' ? ` NULLS LAST` : '';
+
+  // Prefix column with table alias for joined query
+  const sortColumn = safeSortBy === 'best_score' ? 'scores.best_score' : `sp.${safeSortBy}`;
+
   const countResult = await pool.query(
-    `SELECT COUNT(*) FROM similar_profiles ${whereClause}`,
-    params
+    `SELECT COUNT(*) FROM similar_profiles sp ${whereClause}`,
+    params.slice(0, qualificationId ? paramIndex - 1 : paramIndex)
   );
   const total = parseInt(countResult.rows[0].count, 10);
 
   const result = await pool.query(
-    `SELECT * FROM similar_profiles ${whereClause}
-     ORDER BY ${safeSortBy} ${safeSortOrder}
+    `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            (pe.id IS NOT NULL) as is_enriched
+     FROM similar_profiles sp
+     LEFT JOIN (${scoreSubquery}) scores ON sp.id = scores.profile_id
+     LEFT JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     ${whereClause}
+     ORDER BY ${sortColumn} ${safeSortOrder}${nullsClause}
      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
     [...params, limit, offset]
   );
 
-  return { profiles: result.rows as Profile[], total };
+  return { profiles: result.rows as ProfileWithScore[], total };
 }
 
 export async function getProfileById(id: number, organizationId?: string): Promise<Profile | null> {
@@ -450,51 +488,83 @@ export async function getAllTags(organizationId?: string): Promise<string[]> {
 export async function exportProfiles(
   query: Omit<ProfilesQuery, 'page' | 'limit'>,
   organizationId?: string
-): Promise<Profile[]> {
-  const { search, status, tags, sortBy = 'captured_at', sortOrder = 'desc' } = query;
+): Promise<ProfileWithScore[]> {
+  const {
+    search,
+    status,
+    tags,
+    sortBy = 'captured_at',
+    sortOrder = 'desc',
+    qualificationId,
+  } = query;
 
   const conditions: string[] = [];
   const params: unknown[] = [];
   let paramIndex = 1;
 
   if (organizationId) {
-    conditions.push(`organization_id = $${paramIndex}`);
+    conditions.push(`sp.organization_id = $${paramIndex}`);
     params.push(organizationId);
     paramIndex++;
   }
 
   if (search) {
     conditions.push(
-      `(first_name ILIKE $${paramIndex} OR last_name ILIKE $${paramIndex} OR vanity_name ILIKE $${paramIndex})`
+      `(sp.first_name ILIKE $${paramIndex} OR sp.last_name ILIKE $${paramIndex} OR sp.vanity_name ILIKE $${paramIndex})`
     );
     params.push(`%${search}%`);
     paramIndex++;
   }
 
   if (status) {
-    conditions.push(`status = $${paramIndex}`);
+    conditions.push(`sp.status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
 
   if (tags && tags.length > 0) {
-    conditions.push(`tags && $${paramIndex}`);
+    conditions.push(`sp.tags && $${paramIndex}`);
     params.push(tags);
     paramIndex++;
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const allowedSortColumns = ['captured_at', 'first_name', 'last_name'];
+  // Build the score subquery
+  let scoreSubquery: string;
+  if (qualificationId) {
+    scoreSubquery = `
+      SELECT qr.profile_id, qr.score as best_score, qr.passed as best_score_passed
+      FROM qualification_results qr
+      WHERE qr.qualification_id = $${paramIndex}
+    `;
+    params.push(qualificationId);
+    paramIndex++;
+  } else {
+    scoreSubquery = `
+      SELECT qr.profile_id, MAX(qr.score) as best_score,
+             bool_or(qr.passed) as best_score_passed
+      FROM qualification_results qr
+      GROUP BY qr.profile_id
+    `;
+  }
+
+  const allowedSortColumns = ['captured_at', 'first_name', 'last_name', 'best_score'];
   const safeSortBy = allowedSortColumns.includes(sortBy) ? sortBy : 'captured_at';
   const safeSortOrder = sortOrder === 'asc' ? 'ASC' : 'DESC';
+  const nullsClause = safeSortBy === 'best_score' ? ' NULLS LAST' : '';
+  const sortColumn = safeSortBy === 'best_score' ? 'scores.best_score' : `sp.${safeSortBy}`;
 
   const result = await pool.query(
-    `SELECT * FROM similar_profiles ${whereClause} ORDER BY ${safeSortBy} ${safeSortOrder}`,
+    `SELECT sp.*, scores.best_score, scores.best_score_passed
+     FROM similar_profiles sp
+     LEFT JOIN (${scoreSubquery}) scores ON sp.id = scores.profile_id
+     ${whereClause}
+     ORDER BY ${sortColumn} ${safeSortOrder}${nullsClause}`,
     params
   );
 
-  return result.rows as Profile[];
+  return result.rows as ProfileWithScore[];
 }
 
 // ==================== QUALIFICATION FUNCTIONS ====================
@@ -705,10 +775,9 @@ export async function upsertProfileEnrichmentByVanity(
   }
 ): Promise<{ profilesUpdated: number } | null> {
   // Find all profiles with this vanity name (could be multiple from different sources)
-  const profileResult = await pool.query(
-    `SELECT id FROM similar_profiles WHERE vanity_name = $1`,
-    [vanityName.toLowerCase()]
-  );
+  const profileResult = await pool.query(`SELECT id FROM similar_profiles WHERE vanity_name = $1`, [
+    vanityName.toLowerCase(),
+  ]);
 
   if (profileResult.rows.length === 0) {
     return null;
@@ -723,10 +792,9 @@ export async function upsertProfileEnrichmentByVanity(
 }
 
 export async function getProfileEnrichment(profileId: number): Promise<ProfileEnrichment | null> {
-  const result = await pool.query(
-    `SELECT * FROM profile_enrichments WHERE profile_id = $1`,
-    [profileId]
-  );
+  const result = await pool.query(`SELECT * FROM profile_enrichments WHERE profile_id = $1`, [
+    profileId,
+  ]);
 
   if (result.rows.length === 0) return null;
 
@@ -972,4 +1040,62 @@ export async function getProfilesByIds(ids: number[], organizationId: string): P
   );
 
   return result.rows as Profile[];
+}
+
+export async function getEnrichedProfilesForScoring(
+  organizationId: string,
+  qualificationId: number
+): Promise<Array<{ profileId: number; rawResponse: Record<string, unknown> }>> {
+  // Get all enriched profiles that haven't been scored for this qualification yet
+  const result = await pool.query(
+    `SELECT pe.profile_id, pe.raw_response
+     FROM profile_enrichments pe
+     JOIN similar_profiles sp ON pe.profile_id = sp.id
+     LEFT JOIN qualification_results qr ON pe.profile_id = qr.profile_id AND qr.qualification_id = $2
+     WHERE sp.organization_id = $1
+       AND pe.raw_response IS NOT NULL
+       AND qr.id IS NULL`,
+    [organizationId, qualificationId]
+  );
+
+  return result.rows.map((row) => ({
+    profileId: row.profile_id,
+    rawResponse: row.raw_response,
+  }));
+}
+
+export async function getAllPendingScoring(): Promise<
+  Array<{
+    profileId: number;
+    qualificationId: number;
+    qualificationName: string;
+    criteria: Record<string, unknown>;
+    rawResponse: Record<string, unknown>;
+  }>
+> {
+  // Get all enriched profiles that need scoring for any qualification
+  // This finds profiles with enrichments that don't have results for qualifications in their org
+  const result = await pool.query(
+    `SELECT DISTINCT ON (pe.profile_id, jq.id)
+       pe.profile_id,
+       jq.id as qualification_id,
+       jq.name as qualification_name,
+       jq.criteria,
+       pe.raw_response
+     FROM profile_enrichments pe
+     JOIN similar_profiles sp ON pe.profile_id = sp.id
+     JOIN job_qualifications jq ON jq.organization_id = sp.organization_id
+     LEFT JOIN qualification_results qr ON pe.profile_id = qr.profile_id AND qr.qualification_id = jq.id
+     WHERE pe.raw_response IS NOT NULL
+       AND qr.id IS NULL
+     LIMIT 50`
+  );
+
+  return result.rows.map((row) => ({
+    profileId: row.profile_id,
+    qualificationId: row.qualification_id,
+    qualificationName: row.qualification_name,
+    criteria: row.criteria,
+    rawResponse: row.raw_response,
+  }));
 }

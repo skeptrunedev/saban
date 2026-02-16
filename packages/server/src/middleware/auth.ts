@@ -5,7 +5,9 @@ import type { User } from '@saban/shared';
 // JWT secret for extension tokens - read lazily to ensure dotenv has loaded
 function getJwtSecret() {
   return new TextEncoder().encode(
-    process.env.JWT_SECRET || process.env.WORKOS_COOKIE_PASSWORD || 'a-secure-32-character-password!!'
+    process.env.JWT_SECRET ||
+      process.env.WORKOS_COOKIE_PASSWORD ||
+      'a-secure-32-character-password!!'
   );
 }
 
@@ -177,7 +179,11 @@ export const requireAuth = new Elysia({ name: 'requireAuth' })
     // First, check for admin API key (for testing)
     const adminKey = headers['x-admin-api-key'];
     const adminApiKey = getAdminApiKey();
-    console.log('[Auth] Admin key check:', { adminKey, expected: adminApiKey, match: adminKey === adminApiKey });
+    console.log('[Auth] Admin key check:', {
+      adminKey,
+      expected: adminApiKey,
+      match: adminKey === adminApiKey,
+    });
     if (adminApiKey && adminKey === adminApiKey) {
       // Get organization ID from header if provided
       const orgId = headers['x-organization-id'] as string | undefined;

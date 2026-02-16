@@ -26,11 +26,7 @@ export function ProfileCard({ profile, onClick }: ProfileCardProps) {
     >
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
         {profileImage ? (
-          <img
-            src={profileImage}
-            alt={fullName}
-            className="h-12 w-12 rounded-full object-cover"
-          />
+          <img src={profileImage} alt={fullName} className="h-12 w-12 rounded-full object-cover" />
         ) : (
           <User className="h-6 w-6 text-muted-foreground" />
         )}

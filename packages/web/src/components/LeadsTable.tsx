@@ -6,7 +6,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import type { Profile, ProfilesQuery } from '@saban/shared';
+import type { ProfileWithScore, ProfilesQuery } from '@saban/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,12 +18,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User } from 'lucide-react';
-import { parseUTCTimestamp } from '@/lib/utils';
+import {
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ExternalLink,
+  User,
+  CheckCircle,
+  XCircle,
+  Sparkles,
+} from 'lucide-react';
+import { parseUTCTimestamp, getProxiedImageUrl } from '@/lib/utils';
 
 interface LeadsTableProps {
-  profiles: Profile[];
-  onProfileClick: (profile: Profile) => void;
+  profiles: ProfileWithScore[];
+  onProfileClick: (profile: ProfileWithScore) => void;
   onSortChange: (sortBy: ProfilesQuery['sortBy'], sortOrder: ProfilesQuery['sortOrder']) => void;
   sortBy?: ProfilesQuery['sortBy'];
   sortOrder?: ProfilesQuery['sortOrder'];
@@ -31,7 +40,7 @@ interface LeadsTableProps {
   onSelectionChange?: (ids: number[]) => void;
 }
 
-const statusColors: Record<Profile['status'], string> = {
+const statusColors: Record<ProfileWithScore['status'], string> = {
   new: 'bg-blue-100 text-blue-800',
   contacted: 'bg-yellow-100 text-yellow-800',
   replied: 'bg-green-100 text-green-800',
@@ -96,7 +105,7 @@ export function LeadsTable({
   const allSelected = profiles.length > 0 && selectedIds.length === profiles.length;
   const someSelected = selectedIds.length > 0 && selectedIds.length < profiles.length;
 
-  const columns: ColumnDef<Profile>[] = [
+  const columns: ColumnDef<ProfileWithScore>[] = [
     ...(onSelectionChange
       ? [
           {
@@ -110,7 +119,7 @@ export function LeadsTable({
                 onClick={(e) => e.stopPropagation()}
               />
             ),
-            cell: ({ row }: { row: { original: Profile } }) => (
+            cell: ({ row }: { row: { original: ProfileWithScore } }) => (
               <Checkbox
                 checked={selectedIds.includes(row.original.id)}
                 onCheckedChange={(checked) => handleSelectOne(row.original.id, checked as boolean)}
@@ -119,22 +128,19 @@ export function LeadsTable({
               />
             ),
             size: 40,
-          } as ColumnDef<Profile>,
+          } as ColumnDef<ProfileWithScore>,
         ]
       : []),
     {
       id: 'avatar',
       header: '',
       cell: ({ row }) => {
-        const profileImage = row.original.profile_picture_url || row.original.profile_picture_payload;
+        const rawImage = row.original.profile_picture_url || row.original.profile_picture_payload;
+        const profileImage = getProxiedImageUrl(rawImage);
         return (
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
             {profileImage ? (
-              <img
-                src={profileImage}
-                alt=""
-                className="h-10 w-10 rounded-full object-cover"
-              />
+              <img src={profileImage} alt="" className="h-10 w-10 rounded-full object-cover" />
             ) : (
               <User className="h-5 w-5 text-muted-foreground" />
             )}
@@ -210,6 +216,63 @@ export function LeadsTable({
       ),
     },
     {
+      id: 'pipeline_status',
+      header: 'Pipeline',
+      cell: ({ row }) => {
+        const isEnriched = row.original.is_enriched;
+        const hasScore = row.original.best_score !== null && row.original.best_score !== undefined;
+
+        return (
+          <div className="flex items-center gap-2">
+            <div
+              className={`flex items-center gap-1 text-xs ${isEnriched ? 'text-green-600' : 'text-muted-foreground'}`}
+              title={isEnriched ? 'Enriched' : 'Not enriched'}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </div>
+            <div
+              className={`flex items-center gap-1 text-xs ${hasScore ? 'text-green-600' : 'text-muted-foreground'}`}
+              title={hasScore ? 'Scored' : 'Not scored'}
+            >
+              <CheckCircle className="h-3.5 w-3.5" />
+            </div>
+          </div>
+        );
+      },
+      size: 80,
+    },
+    {
+      accessorKey: 'best_score',
+      header: () => (
+        <Button variant="ghost" onClick={() => handleSortToggle('best_score')}>
+          Score
+          {getSortIcon('best_score')}
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const score = row.original.best_score;
+        const passed = row.original.best_score_passed;
+
+        if (score === null || score === undefined) {
+          return <span className="text-muted-foreground text-sm">-</span>;
+        }
+
+        return (
+          <div className="flex items-center gap-1.5">
+            {passed ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-500" />
+            )}
+            <span className={`font-medium ${passed ? 'text-green-600' : 'text-red-500'}`}>
+              {score}
+            </span>
+          </div>
+        );
+      },
+      size: 80,
+    },
+    {
       accessorKey: 'captured_at',
       header: () => (
         <Button variant="ghost" onClick={() => handleSortToggle('captured_at')}>
@@ -227,7 +290,7 @@ export function LeadsTable({
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
-                timeZoneName: 'short'
+                timeZoneName: 'short',
               })}
             </div>
           </div>
