@@ -430,7 +430,7 @@ export async function getProfileById(id: number, organizationId?: string): Promi
 
 export async function updateProfile(
   id: number,
-  updates: UpdateProfileRequest,
+  updates: UpdateProfileRequest & { reviewedAt?: boolean; contactedAt?: boolean },
   organizationId?: string
 ): Promise<Profile | null> {
   const setClauses: string[] = [];
@@ -453,6 +453,14 @@ export async function updateProfile(
     setClauses.push(`status = $${paramIndex}`);
     params.push(updates.status);
     paramIndex++;
+  }
+
+  if (updates.reviewedAt) {
+    setClauses.push(`reviewed_at = NOW()`);
+  }
+
+  if (updates.contactedAt) {
+    setClauses.push(`contacted_at = NOW()`);
   }
 
   if (setClauses.length === 0) {
@@ -1108,4 +1116,139 @@ export async function getAllPendingScoring(): Promise<
     criteria: row.criteria,
     rawResponse: row.raw_response,
   }));
+}
+
+// ==================== REVIEW QUEUE FUNCTIONS ====================
+
+export async function getProfileByVanityName(
+  vanityName: string,
+  organizationId: string
+): Promise<ProfileWithScore | null> {
+  // Get profile by vanity name with best qualification score
+  const result = await pool.query(
+    `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            scores.best_qualification_id, scores.best_qualification_name,
+            (pe.id IS NOT NULL) as is_enriched
+     FROM similar_profiles sp
+     LEFT JOIN (
+       SELECT DISTINCT ON (qr.profile_id)
+              qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+              jq.id as best_qualification_id, jq.name as best_qualification_name
+       FROM qualification_results qr
+       JOIN job_qualifications jq ON qr.qualification_id = jq.id
+       ORDER BY qr.profile_id, qr.score DESC
+     ) scores ON sp.id = scores.profile_id
+     LEFT JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     WHERE sp.vanity_name = $1 AND sp.organization_id = $2
+     LIMIT 1`,
+    [vanityName.toLowerCase(), organizationId]
+  );
+
+  if (result.rows.length === 0) return null;
+  return result.rows[0] as ProfileWithScore;
+}
+
+export async function getReviewQueue(
+  organizationId: string,
+  limit: number = 50
+): Promise<ProfileWithScore[]> {
+  // Get profiles ready for review: status='new', enriched, best_score >= 70
+  const result = await pool.query(
+    `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            scores.best_qualification_id, scores.best_qualification_name,
+            true as is_enriched
+     FROM similar_profiles sp
+     JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     JOIN (
+       SELECT DISTINCT ON (qr.profile_id)
+              qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+              jq.id as best_qualification_id, jq.name as best_qualification_name
+       FROM qualification_results qr
+       JOIN job_qualifications jq ON qr.qualification_id = jq.id
+       ORDER BY qr.profile_id, qr.score DESC
+     ) scores ON sp.id = scores.profile_id
+     WHERE sp.organization_id = $1
+       AND sp.status = 'new'
+       AND scores.best_score >= 70
+     ORDER BY scores.best_score DESC
+     LIMIT $2`,
+    [organizationId, limit]
+  );
+
+  return result.rows as ProfileWithScore[];
+}
+
+export async function getNextReviewProfile(
+  organizationId: string,
+  currentProfileId: number
+): Promise<ProfileWithScore | null> {
+  // Get the next profile in the review queue after the current one
+  // First get current profile's score to find the next one
+  const currentResult = await pool.query(
+    `SELECT qr.score
+     FROM qualification_results qr
+     JOIN similar_profiles sp ON qr.profile_id = sp.id
+     WHERE sp.id = $1 AND sp.organization_id = $2
+     ORDER BY qr.score DESC
+     LIMIT 1`,
+    [currentProfileId, organizationId]
+  );
+
+  const currentScore = currentResult.rows.length > 0 ? currentResult.rows[0].score : 100;
+
+  // Get next profile with same or lower score, excluding current
+  const result = await pool.query(
+    `SELECT sp.*, scores.best_score, scores.best_score_passed,
+            scores.best_qualification_id, scores.best_qualification_name,
+            true as is_enriched
+     FROM similar_profiles sp
+     JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     JOIN (
+       SELECT DISTINCT ON (qr.profile_id)
+              qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+              jq.id as best_qualification_id, jq.name as best_qualification_name
+       FROM qualification_results qr
+       JOIN job_qualifications jq ON qr.qualification_id = jq.id
+       ORDER BY qr.profile_id, qr.score DESC
+     ) scores ON sp.id = scores.profile_id
+     WHERE sp.organization_id = $1
+       AND sp.status = 'new'
+       AND scores.best_score >= 70
+       AND sp.id != $2
+       AND (scores.best_score < $3 OR (scores.best_score = $3 AND sp.id > $2))
+     ORDER BY scores.best_score DESC, sp.id ASC
+     LIMIT 1`,
+    [organizationId, currentProfileId, currentScore]
+  );
+
+  if (result.rows.length === 0) {
+    // Try to get any remaining profile in the queue
+    const fallbackResult = await pool.query(
+      `SELECT sp.*, scores.best_score, scores.best_score_passed,
+              scores.best_qualification_id, scores.best_qualification_name,
+              true as is_enriched
+       FROM similar_profiles sp
+       JOIN profile_enrichments pe ON sp.id = pe.profile_id
+       JOIN (
+         SELECT DISTINCT ON (qr.profile_id)
+                qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
+                jq.id as best_qualification_id, jq.name as best_qualification_name
+         FROM qualification_results qr
+         JOIN job_qualifications jq ON qr.qualification_id = jq.id
+         ORDER BY qr.profile_id, qr.score DESC
+       ) scores ON sp.id = scores.profile_id
+       WHERE sp.organization_id = $1
+         AND sp.status = 'new'
+         AND scores.best_score >= 70
+         AND sp.id != $2
+       ORDER BY scores.best_score DESC
+       LIMIT 1`,
+      [organizationId, currentProfileId]
+    );
+
+    if (fallbackResult.rows.length === 0) return null;
+    return fallbackResult.rows[0] as ProfileWithScore;
+  }
+
+  return result.rows[0] as ProfileWithScore;
 }

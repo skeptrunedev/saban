@@ -262,3 +262,25 @@ export async function getProfileQualifications(profileId: number): Promise<Quali
   );
   return res.data;
 }
+
+// ==================== REVIEW QUEUE ====================
+
+export async function getReviewQueue(limit?: number): Promise<ProfileWithScore[]> {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+
+  const res = await fetchApi<{
+    success: boolean;
+    data: { items: ProfileWithScore[]; total: number };
+  }>(`/profiles/review-queue?${params.toString()}`);
+  return res.data.items;
+}
+
+export async function getNextReviewProfile(currentId: number): Promise<ProfileWithScore | null> {
+  const res = await fetchApi<{
+    success: boolean;
+    data: ProfileWithScore | null;
+    message?: string;
+  }>(`/profiles/next-review/${currentId}`);
+  return res.data;
+}

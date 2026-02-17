@@ -27,6 +27,8 @@ import {
   getEnrichmentJob,
   getProfileEnrichment,
   getProfileQualifications,
+  getReviewQueue,
+  getNextReviewProfile,
   type AuthMeResponse,
 } from './api';
 
@@ -43,6 +45,7 @@ export const queryKeys = {
   enrichmentJob: (id: string) => ['enrichmentJob', id] as const,
   profileEnrichment: (profileId: number) => ['profileEnrichment', profileId] as const,
   profileQualifications: (profileId: number) => ['profileQualifications', profileId] as const,
+  reviewQueue: ['reviewQueue'] as const,
 };
 
 export function useUser() {
@@ -300,5 +303,26 @@ export function useProfileQualifications(profileId: number) {
     queryFn: () => getProfileQualifications(profileId),
     staleTime: 60 * 1000,
     enabled: profileId > 0,
+  });
+}
+
+// ==================== REVIEW QUEUE ====================
+
+export function useReviewQueue() {
+  return useQuery({
+    queryKey: queryKeys.reviewQueue,
+    queryFn: () => getReviewQueue(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useNextReviewProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (currentId: number) => getNextReviewProfile(currentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue });
+    },
   });
 }

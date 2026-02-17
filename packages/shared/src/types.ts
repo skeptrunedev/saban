@@ -82,6 +82,8 @@ export interface UpdateProfileRequest {
   notes?: string;
   tags?: string[];
   status?: Profile['status'];
+  reviewedAt?: boolean;
+  contactedAt?: boolean;
 }
 
 export interface ProfilesQuery {

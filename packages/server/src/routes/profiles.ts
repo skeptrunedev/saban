@@ -7,6 +7,9 @@ import {
   updateProfile,
   getAllTags,
   exportProfiles,
+  getProfileByVanityName,
+  getReviewQueue,
+  getNextReviewProfile,
 } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { triggerScrape, isBrightDataConfigured } from '../services/brightdata.js';
@@ -177,6 +180,53 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
     const tags = await getAllTags(organizationId);
     return { success: true, data: tags };
   })
+  .get('/by-vanity/:vanityName', async ({ params, organizationId, set }) => {
+    if (!organizationId) {
+      set.status = 403;
+      return { success: false, error: 'No organization selected' };
+    }
+
+    const profile = await getProfileByVanityName(params.vanityName, organizationId);
+
+    if (!profile) {
+      set.status = 404;
+      return { success: false, error: 'Profile not found' };
+    }
+
+    return { success: true, data: profile };
+  })
+  .get('/review-queue', async ({ query, organizationId, set }) => {
+    if (!organizationId) {
+      set.status = 403;
+      return { success: false, error: 'No organization selected' };
+    }
+
+    const limit = query.limit ? parseInt(query.limit as string, 10) : 50;
+    const profiles = await getReviewQueue(organizationId, limit);
+
+    return {
+      success: true,
+      data: {
+        items: profiles,
+        total: profiles.length,
+      },
+    };
+  })
+  .get('/next-review/:currentId', async ({ params, organizationId, set }) => {
+    if (!organizationId) {
+      set.status = 403;
+      return { success: false, error: 'No organization selected' };
+    }
+
+    const currentId = parseInt(params.currentId, 10);
+    const nextProfile = await getNextReviewProfile(organizationId, currentId);
+
+    if (!nextProfile) {
+      return { success: true, data: null, message: 'No more profiles to review' };
+    }
+
+    return { success: true, data: nextProfile };
+  })
   .get('/:id', async ({ params, organizationId, set }) => {
     const id = parseInt(params.id, 10);
     const profile = await getProfileById(id, organizationId);
@@ -192,9 +242,9 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
     '/:id',
     async ({ params, body, organizationId, set }) => {
       const id = parseInt(params.id, 10);
-      const { notes, tags, status } = body;
+      const { notes, tags, status, reviewedAt, contactedAt } = body;
 
-      const profile = await updateProfile(id, { notes, tags, status }, organizationId);
+      const profile = await updateProfile(id, { notes, tags, status, reviewedAt, contactedAt }, organizationId);
 
       if (!profile) {
         set.status = 404;
@@ -216,6 +266,8 @@ export const profilesRoutes = new Elysia({ prefix: '/api/profiles' })
             t.Literal('disqualified'),
           ])
         ),
+        reviewedAt: t.Optional(t.Boolean()),
+        contactedAt: t.Optional(t.Boolean()),
       }),
     }
   );

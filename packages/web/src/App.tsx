@@ -11,6 +11,7 @@ import { NewOrganization } from '@/pages/NewOrganization';
 import { ExtensionAuth } from '@/pages/ExtensionAuth';
 import { Qualifications } from '@/pages/Qualifications';
 import { QualificationDetail } from '@/pages/QualificationDetail';
+import { Review } from '@/pages/Review';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -68,7 +69,12 @@ function Layout({ children }: { children: ReactNode }) {
       <header className="border-b bg-background">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
           <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">Saban</h1>
+            <h1
+              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
+              onClick={() => navigate('/')}
+            >
+              Saban
+            </h1>
 
             {/* Organization Switcher */}
             {currentOrg && organizations.length > 0 && (
@@ -227,6 +233,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <QualificationDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/review"
+        element={
+          <ProtectedRoute>
+            <Review />
           </ProtectedRoute>
         }
       />

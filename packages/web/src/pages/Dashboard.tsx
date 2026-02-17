@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Profile, ProfileWithScore, ProfilesQuery } from '@saban/shared';
-import { useProfiles, useTags, useStartEnrichment, useQualifications } from '@/lib/queries';
+import { useProfiles, useTags, useStartEnrichment, useQualifications, useReviewQueue } from '@/lib/queries';
 import { SearchBar } from '@/components/SearchBar';
 import { FilterPanel } from '@/components/FilterPanel';
 import { LeadsTable } from '@/components/LeadsTable';
@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sparkles, ChevronDown, Loader2 } from 'lucide-react';
+import { Sparkles, ChevronDown, Loader2, PlayCircle } from 'lucide-react';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -32,6 +32,7 @@ export function Dashboard() {
 
   const enrichMutation = useStartEnrichment();
   const { data: qualifications } = useQualifications();
+  const { data: reviewQueue } = useReviewQueue();
 
   // Helper to update URL params
   const updateParams = useCallback(
@@ -157,6 +158,13 @@ export function Dashboard() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          <Button
+            variant={reviewQueue && reviewQueue.length > 0 ? 'default' : 'outline'}
+            onClick={() => navigate('/review')}
+          >
+            <PlayCircle className="mr-2 h-4 w-4" />
+            Review {reviewQueue && reviewQueue.length > 0 ? `(${reviewQueue.length})` : ''}
+          </Button>
           <ExportButton
             query={{
               search: search || undefined,
