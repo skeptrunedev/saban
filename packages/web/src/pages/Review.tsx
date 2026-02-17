@@ -359,15 +359,22 @@ export function Review() {
             )}
 
             {/* LinkedIn Link */}
-            <a
-              href={currentProfile.profile_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mb-6 flex items-center justify-center gap-2 rounded-lg border p-3 text-sm text-primary hover:bg-muted/50 transition-colors"
+            <button
+              onClick={() => {
+                const width = Math.floor(window.screen.width / 2);
+                const height = window.screen.height;
+                const left = window.screen.width - width;
+                window.open(
+                  currentProfile.profile_url,
+                  'linkedin-profile',
+                  `width=${width},height=${height},left=${left},top=0`
+                );
+              }}
+              className="mb-6 flex w-full items-center justify-center gap-2 rounded-lg border p-3 text-sm text-primary hover:bg-muted/50 transition-colors"
             >
               View Full Profile on LinkedIn
               <ExternalLink className="h-4 w-4" />
-            </a>
+            </button>
 
             {/* Notes and Options */}
             <div className="mb-6 space-y-3">

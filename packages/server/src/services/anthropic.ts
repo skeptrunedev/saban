@@ -98,44 +98,63 @@ export async function scoreProfileWithAI(
   const profileSummary = buildProfileSummary(profile);
   const criteriaSummary = buildCriteriaSummary(criteria);
 
-  const systemPrompt = `You are an expert recruiter evaluating LinkedIn profiles against job qualification criteria.
-Your task is to score how well a candidate matches the requirements on a scale of 0-100.
+  const systemPrompt = `You are an expert recruiter evaluating whether a LinkedIn profile represents a REALISTIC candidate for a specific role.
+
+Your job is NOT just to check if they meet minimum qualifications - it's to assess whether this person would realistically consider and be a good fit for this role.
+
+LIKELY DISQUALIFYING (score 0-40):
+- Located outside the United States (India, Europe, etc.) - US-based candidates only
+- CEOs/Founders of well-funded, successful, or fast-growing companies (they're committed to their thing)
+- C-suite executives at large established companies (they've moved past this level)
+- Active venture capitalists/investors (different career path)
+- People at companies like Vercel, Stripe, major tech cos in senior roles (they have good jobs)
+- Non-technical people for technical roles (and vice versa)
+
+POTENTIALLY INTERESTING despite senior titles (evaluate carefully):
+- Founders/CEOs at small companies that seem stagnant or have been doing the same thing for 5+ years
+- C-suite at very early stage or struggling startups
+- People whose company seems to be winding down or not growing
+- "Fractional" or "Advisor" roles suggest they might be looking
+- Founders of companies that failed or were acqui-hired
+
+STRONG CANDIDATES (score 70+):
+- Senior ICs or managers looking to level up
+- People at similar level who might want a new opportunity
+- People whose career trajectory logically leads to this role
+- Those with right background who seem potentially moveable
 
 Scoring guidelines:
-- 90-100: Exceptional match, exceeds all requirements
-- 70-89: Strong match, meets most requirements
-- 50-69: Moderate match, meets some requirements
-- 30-49: Weak match, meets few requirements
-- 0-29: Poor match, does not meet requirements
+- 80-100: Strong realistic candidate - right level, right background, likely recruitable
+- 70-79: Good candidate - meets requirements and could realistically be interested
+- 50-69: Maybe - uncertain if they'd be interested given their current situation
+- 30-49: Unlikely - probably too senior, wrong path, or wouldn't be interested
+- 0-29: Not a fit - clearly wrong level, successful founder/CEO, or completely different career
 
-IMPORTANT: Be flexible and make reasonable inferences when data is missing.
-- If experience years aren't explicit, infer from job history, seniority of roles, or career progression
-- A senior title or founder role implies significant experience
-- High follower counts suggest industry influence and experience
-- Don't penalize candidates for incomplete LinkedIn profiles - judge based on available evidence
-- When in doubt, give the benefit of the doubt to candidates with strong signals
+Think like a recruiter: "Would this person plausibly consider this role, or is it beneath them / irrelevant to them?"
 
 You must respond in valid JSON format with exactly these fields:
 {
   "score": <number 0-100>,
-  "reasoning": "<brief explanation of score>",
+  "reasoning": "<brief explanation focusing on FIT and LIKELIHOOD, not just qualifications>",
   "passed": <true if score >= 70, false otherwise>
 }`;
 
-  const userPrompt = `Evaluate this candidate profile against the job criteria.
+  const userPrompt = `Evaluate whether this person is a REALISTIC candidate for the role - not just qualified on paper, but someone who would actually consider this opportunity.
 
 ## Candidate Profile
 ${profileSummary}
 
-## Job Qualification Criteria
+## Role Requirements
 ${criteriaSummary}
 
-${criteria.customPrompt ? `## Additional Requirements\n${criteria.customPrompt}` : ''}
+${criteria.customPrompt ? `## Additional Context\n${criteria.customPrompt}` : ''}
+
+Think critically: Is this person at the right career stage? Would reaching out to them about this role make sense, or would it be a waste of time because they're overqualified, in a different career path, or wouldn't be interested?
 
 Respond with a JSON object containing score, reasoning, and passed fields.`;
 
   const response = await client.messages.create({
-    model: 'claude-3-5-haiku-latest',
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 500,
     messages: [
       {
