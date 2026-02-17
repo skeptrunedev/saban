@@ -215,48 +215,46 @@ export async function insertProfiles(
 
     for (const profile of profiles) {
       try {
-        // First, try to update existing records that have null fields we now have data for
-        // This supplements records from other sources (e.g., PYMK) with data from direct views
-        if (
-          profile.headline ||
-          profile.profilePictureUrl ||
-          profile.location ||
-          profile.connectionDegree
-        ) {
-          const updateResult = await client.query(
-            `UPDATE similar_profiles SET
-              headline = COALESCE(headline, $1),
-              profile_picture_url = COALESCE(profile_picture_url, $2),
-              location = COALESCE(location, $3),
-              connection_degree = COALESCE(connection_degree, $4),
-              first_name = COALESCE(first_name, $5),
-              last_name = COALESCE(last_name, $6),
-              member_urn = COALESCE(member_urn, $7)
-            WHERE profile_url = $8
-              AND organization_id = $9
-              AND (headline IS NULL OR profile_picture_url IS NULL OR location IS NULL OR connection_degree IS NULL)
-            RETURNING id`,
-            [
-              profile.headline,
-              profile.profilePictureUrl,
-              profile.location,
-              profile.connectionDegree,
-              profile.firstName,
-              profile.lastName,
-              profile.memberUrn,
-              profile.profileUrl,
-              organizationId,
-            ]
+        // Deduplicate by vanity_name within the organization
+        // If a profile with this vanity_name already exists, update it with any new data
+        // Otherwise, insert as new
+        if (profile.vanityName && organizationId) {
+          const existingResult = await client.query(
+            `SELECT id FROM similar_profiles
+             WHERE vanity_name = $1 AND organization_id = $2
+             LIMIT 1`,
+            [profile.vanityName.toLowerCase(), organizationId]
           );
 
-          if (updateResult.rowCount && updateResult.rowCount > 0) {
-            console.log(
-              `Updated ${updateResult.rowCount} existing record(s) for ${profile.profileUrl} with new data from ${sourceSection}`
+          if (existingResult.rows.length > 0) {
+            // Profile already exists - update with any new data (COALESCE keeps existing values)
+            await client.query(
+              `UPDATE similar_profiles SET
+                headline = COALESCE(headline, $1),
+                profile_picture_url = COALESCE(profile_picture_url, $2),
+                location = COALESCE(location, $3),
+                connection_degree = COALESCE(connection_degree, $4),
+                first_name = COALESCE(first_name, $5),
+                last_name = COALESCE(last_name, $6),
+                member_urn = COALESCE(member_urn, $7)
+              WHERE id = $8`,
+              [
+                profile.headline,
+                profile.profilePictureUrl,
+                profile.location,
+                profile.connectionDegree,
+                profile.firstName,
+                profile.lastName,
+                profile.memberUrn,
+                existingResult.rows[0].id,
+              ]
             );
+            // Skip insertion - profile already exists
+            continue;
           }
         }
 
-        // Then insert new record, returning ID if inserted
+        // Insert new record
         const insertResult = await client.query(
           `INSERT INTO similar_profiles
            (source_profile_url, source_section, profile_url, vanity_name, first_name, last_name, member_urn, headline, profile_picture_url, location, connection_degree, profile_picture_payload, raw_data, organization_id, created_by_user_id)
