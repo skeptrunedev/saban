@@ -1172,6 +1172,7 @@ export async function getReviewQueue(
   limit: number = 50
 ): Promise<ProfileWithScore[]> {
   // Get profiles ready for review: status='new', enriched, best_score >= 70
+  // Exclude profiles where ANY profile with the same vanity_name has been reviewed
   const result = await pool.query(
     `SELECT sp.*, scores.best_score, scores.best_score_passed,
             scores.best_qualification_id, scores.best_qualification_name,
@@ -1189,6 +1190,12 @@ export async function getReviewQueue(
      WHERE sp.organization_id = $1
        AND sp.status = 'new'
        AND scores.best_score >= 70
+       AND sp.vanity_name NOT IN (
+         SELECT vanity_name FROM similar_profiles
+         WHERE organization_id = $1
+           AND status IN ('qualified', 'disqualified')
+           AND vanity_name IS NOT NULL
+       )
      ORDER BY scores.best_score DESC
      LIMIT $2`,
     [organizationId, limit]
@@ -1216,6 +1223,7 @@ export async function getNextReviewProfile(
   const currentScore = currentResult.rows.length > 0 ? currentResult.rows[0].score : 100;
 
   // Get next profile with same or lower score, excluding current
+  // Also exclude profiles where ANY profile with the same vanity_name has been reviewed
   const result = await pool.query(
     `SELECT sp.*, scores.best_score, scores.best_score_passed,
             scores.best_qualification_id, scores.best_qualification_name,
@@ -1235,6 +1243,12 @@ export async function getNextReviewProfile(
        AND scores.best_score >= 70
        AND sp.id != $2
        AND (scores.best_score < $3 OR (scores.best_score = $3 AND sp.id > $2))
+       AND sp.vanity_name NOT IN (
+         SELECT vanity_name FROM similar_profiles
+         WHERE organization_id = $1
+           AND status IN ('qualified', 'disqualified')
+           AND vanity_name IS NOT NULL
+       )
      ORDER BY scores.best_score DESC, sp.id ASC
      LIMIT 1`,
     [organizationId, currentProfileId, currentScore]
@@ -1260,6 +1274,12 @@ export async function getNextReviewProfile(
          AND sp.status = 'new'
          AND scores.best_score >= 70
          AND sp.id != $2
+         AND sp.vanity_name NOT IN (
+           SELECT vanity_name FROM similar_profiles
+           WHERE organization_id = $1
+             AND status IN ('qualified', 'disqualified')
+             AND vanity_name IS NOT NULL
+         )
        ORDER BY scores.best_score DESC
        LIMIT 1`,
       [organizationId, currentProfileId]
