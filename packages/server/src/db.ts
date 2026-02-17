@@ -1082,6 +1082,25 @@ export async function getEnrichedProfilesForScoring(
   }));
 }
 
+export async function getAllEnrichedProfiles(
+  organizationId: string
+): Promise<Array<{ profileId: number; rawResponse: Record<string, unknown> }>> {
+  // Get ALL enriched profiles for rescoring (includes already scored ones)
+  const result = await pool.query(
+    `SELECT pe.profile_id, pe.raw_response
+     FROM profile_enrichments pe
+     JOIN similar_profiles sp ON pe.profile_id = sp.id
+     WHERE sp.organization_id = $1
+       AND pe.raw_response IS NOT NULL`,
+    [organizationId]
+  );
+
+  return result.rows.map((row) => ({
+    profileId: row.profile_id,
+    rawResponse: row.raw_response,
+  }));
+}
+
 export async function getAllPendingScoring(): Promise<
   Array<{
     profileId: number;

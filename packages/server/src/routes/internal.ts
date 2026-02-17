@@ -6,6 +6,7 @@ import {
   upsertProfileEnrichmentByVanity,
   getEnrichedProfilesForScoring,
   getAllPendingScoring,
+  getAllEnrichedProfiles,
 } from '../db.js';
 import { scoreProfileWithAI } from '../services/anthropic.js';
 
@@ -394,6 +395,72 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
         success: true,
         data: {
           message: `Scored ${scored} profiles`,
+          scored,
+          failed,
+          total: profilesToScore.length,
+        },
+      };
+    },
+    {
+      body: t.Object({
+        organizationId: t.String(),
+      }),
+    }
+  )
+  // Rescore ALL enriched profiles against a qualification (even already scored ones)
+  .post(
+    '/qualifications/:id/rescore',
+    async ({ params, body }) => {
+      const qualificationId = parseInt(params.id, 10);
+      const organizationId = body.organizationId;
+
+      const qualification = await getQualificationByIdInternal(qualificationId);
+
+      if (!qualification) {
+        return { success: false, error: 'Qualification not found' };
+      }
+
+      // Get ALL enriched profiles (including already scored ones)
+      const profilesToScore = await getAllEnrichedProfiles(organizationId);
+
+      if (profilesToScore.length === 0) {
+        return {
+          success: true,
+          data: { message: 'No profiles to rescore', scored: 0, failed: 0 },
+        };
+      }
+
+      console.log(
+        `[Rescore] Rescoring ${profilesToScore.length} profiles against qualification ${qualificationId}`
+      );
+
+      let scored = 0;
+      let failed = 0;
+
+      for (const { profileId, rawResponse } of profilesToScore) {
+        try {
+          const result = await scoreProfileWithAI(rawResponse as any, qualification.criteria);
+
+          await upsertQualificationResult(
+            profileId,
+            qualificationId,
+            result.score,
+            result.reasoning,
+            result.passed
+          );
+
+          console.log(`[Rescore] Profile ${profileId}: score=${result.score}, passed=${result.passed}`);
+          scored++;
+        } catch (err) {
+          console.error(`[Rescore] Failed to score profile ${profileId}:`, err);
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `Rescored ${scored} profiles`,
           scored,
           failed,
           total: profilesToScore.length,
