@@ -472,7 +472,117 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
         organizationId: t.String(),
       }),
     }
+  )
+  // Enrich profiles using People Data Labs (by name + company)
+  .post(
+    '/enrichment/pdl',
+    async ({ body }) => {
+      if (!isPDLConfigured()) {
+        return { success: false, error: 'PDL_API_KEY not configured' };
+      }
+
+      const { organizationId, limit = 50 } = body;
+
+      // Get profiles that are missing experience data
+      const profilesNeedingEnrichment = await getProfilesMissingExperience(organizationId, limit);
+
+      if (profilesNeedingEnrichment.length === 0) {
+        return {
+          success: true,
+          data: { message: 'No profiles need PDL enrichment', enriched: 0, failed: 0 },
+        };
+      }
+
+      console.log(`[PDL] Enriching ${profilesNeedingEnrichment.length} profiles missing experience data`);
+
+      let enriched = 0;
+      let failed = 0;
+
+      for (const profile of profilesNeedingEnrichment) {
+        try {
+          const pdlResponse = await enrichPerson({
+            firstName: profile.first_name,
+            lastName: profile.last_name,
+            company: profile.current_company,
+            linkedinUrl: profile.linkedin_url,
+          });
+
+          if (pdlResponse.status === 200 && pdlResponse.data) {
+            const enrichmentData = convertPDLToEnrichment(pdlResponse.data);
+
+            await upsertProfileEnrichment(profile.id, enrichmentData);
+
+            console.log(
+              `[PDL] Enriched profile ${profile.id} (${profile.first_name} ${profile.last_name}): ` +
+                `${pdlResponse.data.experience?.length || 0} experiences found`
+            );
+            enriched++;
+          } else {
+            console.log(
+              `[PDL] No match for profile ${profile.id} (${profile.first_name} ${profile.last_name}): status=${pdlResponse.status}`
+            );
+            failed++;
+          }
+
+          // Rate limit: PDL allows 100/min free, 1000/min paid
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } catch (err) {
+          console.error(`[PDL] Failed to enrich profile ${profile.id}:`, err);
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `PDL enriched ${enriched} profiles`,
+          enriched,
+          failed,
+          total: profilesNeedingEnrichment.length,
+        },
+      };
+    },
+    {
+      body: t.Object({
+        organizationId: t.String(),
+        limit: t.Optional(t.Number()),
+      }),
+    }
   );
+
+// Helper function to get profiles missing experience data
+async function getProfilesMissingExperience(
+  organizationId: string,
+  limit: number
+): Promise<
+  Array<{
+    id: number;
+    first_name: string;
+    last_name: string;
+    current_company: string;
+    linkedin_url: string;
+  }>
+> {
+  const result = await pool.query(
+    `SELECT sp.id, sp.first_name, sp.last_name, sp.profile_url as linkedin_url,
+            COALESCE(pe.raw_response->>'current_company_name', pe.raw_response->'current_company'->>'name') as current_company
+     FROM similar_profiles sp
+     JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     WHERE sp.organization_id = $1
+       AND sp.first_name IS NOT NULL
+       AND sp.last_name IS NOT NULL
+       AND (
+         pe.raw_response->'experience' IS NULL
+         OR jsonb_typeof(pe.raw_response->'experience') != 'array'
+         OR jsonb_array_length(pe.raw_response->'experience') = 0
+       )
+     ORDER BY sp.captured_at DESC
+     LIMIT $2`,
+    [organizationId, limit]
+  );
+
+  return result.rows;
+}
 
 // Helper function to get qualification without org check (for internal use)
 import { pool } from '../db.js';
@@ -512,6 +622,7 @@ async function getUnenrichedProfileUrls(limit: number = 50): Promise<string[]> {
 
 // Trigger scrapes for unenriched profiles
 import { triggerScrape, isBrightDataConfigured } from '../services/brightdata.js';
+import { enrichPerson, isPDLConfigured, convertPDLToEnrichment } from '../services/pdl.js';
 
 async function triggerUnenrichedScrapes(
   limit: number = 50
