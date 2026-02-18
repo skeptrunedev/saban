@@ -751,7 +751,7 @@ export async function upsertProfileEnrichment(
       data.followerCount,
       data.experience ? JSON.stringify(data.experience) : null,
       data.education ? JSON.stringify(data.education) : null,
-      data.skills,
+      data.skills ? JSON.stringify(data.skills) : null,
       data.certifications ? JSON.stringify(data.certifications) : null,
       data.languages ? JSON.stringify(data.languages) : null,
       data.about,
