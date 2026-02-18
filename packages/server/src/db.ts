@@ -1170,6 +1170,7 @@ export async function getReviewQueue(
   limit: number = 50
 ): Promise<ProfileWithScore[]> {
   // Get profiles ready for review: status='new', enriched, best_score >= 70
+  // Only include profiles that have been rescored (evaluated_at >= 2026-02-17 23:00)
   // Exclude profiles where ANY profile with the same vanity_name has been reviewed
   const result = await pool.query(
     `SELECT sp.*, scores.best_score, scores.best_score_passed,
@@ -1180,9 +1181,11 @@ export async function getReviewQueue(
      JOIN (
        SELECT DISTINCT ON (qr.profile_id)
               qr.profile_id, qr.score as best_score, qr.passed as best_score_passed,
-              jq.id as best_qualification_id, jq.name as best_qualification_name
+              jq.id as best_qualification_id, jq.name as best_qualification_name,
+              qr.evaluated_at
        FROM qualification_results qr
        JOIN job_qualifications jq ON qr.qualification_id = jq.id
+       WHERE qr.evaluated_at >= '2026-02-17 23:00:00+00'
        ORDER BY qr.profile_id, qr.score DESC
      ) scores ON sp.id = scores.profile_id
      WHERE sp.organization_id = $1
@@ -1213,6 +1216,7 @@ export async function getNextReviewProfile(
      FROM qualification_results qr
      JOIN similar_profiles sp ON qr.profile_id = sp.id
      WHERE sp.id = $1 AND sp.organization_id = $2
+       AND qr.evaluated_at >= '2026-02-17 23:00:00+00'
      ORDER BY qr.score DESC
      LIMIT 1`,
     [currentProfileId, organizationId]
@@ -1221,6 +1225,7 @@ export async function getNextReviewProfile(
   const currentScore = currentResult.rows.length > 0 ? currentResult.rows[0].score : 100;
 
   // Get next profile with same or lower score, excluding current
+  // Only include rescored profiles (evaluated_at >= 2026-02-17 23:00)
   // Also exclude profiles where ANY profile with the same vanity_name has been reviewed
   const result = await pool.query(
     `SELECT sp.*, scores.best_score, scores.best_score_passed,
@@ -1234,6 +1239,7 @@ export async function getNextReviewProfile(
               jq.id as best_qualification_id, jq.name as best_qualification_name
        FROM qualification_results qr
        JOIN job_qualifications jq ON qr.qualification_id = jq.id
+       WHERE qr.evaluated_at >= '2026-02-17 23:00:00+00'
        ORDER BY qr.profile_id, qr.score DESC
      ) scores ON sp.id = scores.profile_id
      WHERE sp.organization_id = $1
@@ -1266,6 +1272,7 @@ export async function getNextReviewProfile(
                 jq.id as best_qualification_id, jq.name as best_qualification_name
          FROM qualification_results qr
          JOIN job_qualifications jq ON qr.qualification_id = jq.id
+         WHERE qr.evaluated_at >= '2026-02-17 23:00:00+00'
          ORDER BY qr.profile_id, qr.score DESC
        ) scores ON sp.id = scores.profile_id
        WHERE sp.organization_id = $1
