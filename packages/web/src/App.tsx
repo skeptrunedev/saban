@@ -12,6 +12,7 @@ import { ExtensionAuth } from '@/pages/ExtensionAuth';
 import { Qualifications } from '@/pages/Qualifications';
 import { QualificationDetail } from '@/pages/QualificationDetail';
 import { Review } from '@/pages/Review';
+import { Qualified } from '@/pages/Qualified';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ import {
   ChevronDown,
   Check,
   Target,
+  CheckCircle2,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -124,6 +126,10 @@ function Layout({ children }: { children: ReactNode }) {
                   <DropdownMenuItem onClick={() => navigate('/qualifications')}>
                     <Target className="mr-2 h-4 w-4" />
                     Job Qualifications
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/qualified')}>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Qualified Candidates
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/settings')}>
                     <SettingsIcon className="mr-2 h-4 w-4" />
@@ -241,6 +247,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Review />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/qualified"
+        element={
+          <ProtectedRoute>
+            <Qualified />
           </ProtectedRoute>
         }
       />

@@ -154,7 +154,7 @@ Think critically: Is this person at the right career stage? Would reaching out t
 Respond with a JSON object containing score, reasoning, and passed fields.`;
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 500,
     messages: [
       {

@@ -112,4 +112,18 @@ export class ServerClient {
       }
     );
   }
+
+  /**
+   * Enrich profiles using People Data Labs API
+   * PDL provides better work history data than BrightData scraping
+   */
+  async enrichWithPDL(limit: number = 50): Promise<{ enriched: number; failed: number; total: number }> {
+    return this.fetch<{ enriched: number; failed: number; total: number; message: string }>(
+      '/api/internal/enrichment/pdl-all',
+      {
+        method: 'POST',
+        body: JSON.stringify({ limit }),
+      }
+    );
+  }
 }

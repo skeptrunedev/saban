@@ -7,6 +7,7 @@ import {
   getEnrichedProfilesForScoring,
   getAllPendingScoring,
   getAllEnrichedProfiles,
+  pool,
 } from '../db.js';
 import { scoreProfileWithAI } from '../services/anthropic.js';
 
@@ -473,7 +474,97 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
       }),
     }
   )
-  // Enrich profiles using People Data Labs (by name + company)
+  // Enrich profiles using People Data Labs (all organizations)
+  .post(
+    '/enrichment/pdl-all',
+    async ({ body }) => {
+      if (!isPDLConfigured()) {
+        return { success: false, error: 'PDL_API_KEY not configured' };
+      }
+
+      const { limit = 50 } = body;
+
+      // Get profiles that are missing experience data (across all orgs)
+      const profilesNeedingEnrichment = await getProfilesMissingExperienceAll(limit);
+
+      if (profilesNeedingEnrichment.length === 0) {
+        return {
+          success: true,
+          data: { message: 'No profiles need PDL enrichment', enriched: 0, failed: 0, total: 0 },
+        };
+      }
+
+      console.log(`[PDL] Enriching ${profilesNeedingEnrichment.length} profiles missing experience data`);
+
+      let enriched = 0;
+      let failed = 0;
+
+      for (const profile of profilesNeedingEnrichment) {
+        try {
+          const pdlResponse = await enrichPerson({
+            firstName: profile.first_name,
+            lastName: profile.last_name,
+            company: profile.current_company,
+            linkedinUrl: profile.linkedin_url,
+          });
+
+          if (pdlResponse.status === 200 && pdlResponse.data) {
+            const enrichmentData = convertPDLToEnrichment(pdlResponse.data);
+
+            await upsertProfileEnrichment(profile.id, enrichmentData);
+
+            // Auto-score the profile against all qualifications
+            if (enrichmentData.rawResponse) {
+              await scoreProfileAgainstAllQualifications(
+                profile.id,
+                enrichmentData.rawResponse as Record<string, unknown>
+              );
+            }
+
+            console.log(
+              `[PDL] Enriched profile ${profile.id} (${profile.first_name} ${profile.last_name}): ` +
+                `${pdlResponse.data.experience?.length || 0} experiences found`
+            );
+            enriched++;
+          } else if (pdlResponse.status === 404) {
+            // Mark as not found so we don't retry
+            await markPDLNotFound(profile.id);
+            console.log(
+              `[PDL] No match for profile ${profile.id} (${profile.first_name} ${profile.last_name}): marked as not found`
+            );
+            failed++;
+          } else {
+            console.log(
+              `[PDL] Failed for profile ${profile.id} (${profile.first_name} ${profile.last_name}): status=${pdlResponse.status}`
+            );
+            failed++;
+          }
+
+          // Rate limit: PDL allows 100/min free, 1000/min paid
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } catch (err) {
+          console.error(`[PDL] Failed to enrich profile ${profile.id}:`, err);
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `PDL enriched ${enriched} profiles`,
+          enriched,
+          failed,
+          total: profilesNeedingEnrichment.length,
+        },
+      };
+    },
+    {
+      body: t.Object({
+        limit: t.Optional(t.Number()),
+      }),
+    }
+  )
+  // Enrich profiles using People Data Labs (by org - for manual use)
   .post(
     '/enrichment/pdl',
     async ({ body }) => {
@@ -548,9 +639,49 @@ export const internalRoutes = new Elysia({ prefix: '/api/internal' })
         limit: t.Optional(t.Number()),
       }),
     }
+  )
+  // Update profile status by vanity name
+  .post(
+    '/profile/update-status',
+    async ({ body }) => {
+      const { vanityName, status } = body;
+
+      // Find profile by vanity name
+      const result = await pool.query(
+        `UPDATE similar_profiles
+         SET status = $1, reviewed_at = NOW()
+         WHERE vanity_name = $2
+         RETURNING id, first_name, last_name, status`,
+        [status, vanityName.toLowerCase()]
+      );
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'Profile not found' };
+      }
+
+      return {
+        success: true,
+        data: {
+          message: `Updated ${result.rows.length} profile(s) to status: ${status}`,
+          profiles: result.rows,
+        },
+      };
+    },
+    {
+      body: t.Object({
+        vanityName: t.String(),
+        status: t.Union([
+          t.Literal('new'),
+          t.Literal('qualified'),
+          t.Literal('disqualified'),
+          t.Literal('contacted'),
+          t.Literal('replied'),
+        ]),
+      }),
+    }
   );
 
-// Helper function to get profiles missing experience data
+// Helper function to get profiles missing experience data (specific org)
 async function getProfilesMissingExperience(
   organizationId: string,
   limit: number
@@ -582,6 +713,48 @@ async function getProfilesMissingExperience(
   );
 
   return result.rows;
+}
+
+// Helper function to get profiles missing experience data (all orgs)
+async function getProfilesMissingExperienceAll(
+  limit: number
+): Promise<
+  Array<{
+    id: number;
+    first_name: string;
+    last_name: string;
+    current_company: string;
+    linkedin_url: string;
+  }>
+> {
+  const result = await pool.query(
+    `SELECT sp.id, sp.first_name, sp.last_name, sp.profile_url as linkedin_url,
+            COALESCE(pe.raw_response->>'current_company_name', pe.raw_response->'current_company'->>'name') as current_company
+     FROM similar_profiles sp
+     JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     WHERE sp.organization_id IS NOT NULL
+       AND sp.first_name IS NOT NULL
+       AND sp.last_name IS NOT NULL
+       AND COALESCE(pe.pdl_not_found, false) = false
+       AND (
+         pe.raw_response->'experience' IS NULL
+         OR jsonb_typeof(pe.raw_response->'experience') != 'array'
+         OR jsonb_array_length(pe.raw_response->'experience') = 0
+       )
+     ORDER BY sp.captured_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+// Mark a profile as not found in PDL
+async function markPDLNotFound(profileId: number): Promise<void> {
+  await pool.query(
+    `UPDATE profile_enrichments SET pdl_not_found = true WHERE profile_id = $1`,
+    [profileId]
+  );
 }
 
 // Helper function to get qualification without org check (for internal use)

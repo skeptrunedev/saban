@@ -20,6 +20,8 @@ export interface Profile {
   status: 'new' | 'contacted' | 'replied' | 'qualified' | 'disqualified';
   organization_id: string | null;
   created_by_user_id: string | null;
+  reviewed_at: Date | null;
+  contacted_at: Date | null;
 }
 
 // WorkOS User type
@@ -197,7 +199,8 @@ export interface ProfileEnrichment {
   certifications: EnrichmentCertification[] | null;
   languages: EnrichmentLanguage[] | null;
   about: string | null;
-  raw_response: Record<string, unknown> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  raw_response: Record<string, any> | null;
   enriched_at: Date;
 }
 

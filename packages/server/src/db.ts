@@ -391,8 +391,13 @@ export async function getProfiles(
   // Prefix column with table alias for joined query
   const sortColumn = safeSortBy === 'best_score' ? 'scores.best_score' : `sp.${safeSortBy}`;
 
+  // Add filter to exclude profiles marked as unenrichable by PDL
+  const pdlFilter = `AND COALESCE(pe.pdl_not_found, false) = false`;
+
   const countResult = await pool.query(
-    `SELECT COUNT(*) FROM similar_profiles sp ${whereClause}`,
+    `SELECT COUNT(*) FROM similar_profiles sp
+     LEFT JOIN profile_enrichments pe ON sp.id = pe.profile_id
+     ${whereClause} ${pdlFilter}`,
     params.slice(0, qualificationId ? paramIndex - 1 : paramIndex)
   );
   const total = parseInt(countResult.rows[0].count, 10);
@@ -404,7 +409,7 @@ export async function getProfiles(
      FROM similar_profiles sp
      LEFT JOIN (${scoreSubquery}) scores ON sp.id = scores.profile_id
      LEFT JOIN profile_enrichments pe ON sp.id = pe.profile_id
-     ${whereClause}
+     ${whereClause} ${pdlFilter}
      ORDER BY ${sortColumn} ${safeSortOrder}${nullsClause}
      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
     [...params, limit, offset]

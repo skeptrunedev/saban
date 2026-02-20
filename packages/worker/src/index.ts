@@ -42,13 +42,13 @@ export default {
       }
     }
 
-    // Step 2: Trigger scrapes for unenriched profiles
-    console.log('Cron: Triggering scrapes for unenriched profiles');
+    // Step 2: Enrich profiles using People Data Labs API
+    console.log('Cron: Enriching profiles with PDL');
     try {
-      const result = await serverClient.triggerUnenrichedScrapes(50);
-      console.log(`Cron: Scrape trigger result: ${result.triggered} profiles, snapshotId=${result.snapshotId || 'none'}`);
+      const result = await serverClient.enrichWithPDL(10);
+      console.log(`Cron: PDL enrichment result: ${result.enriched} enriched, ${result.failed} failed`);
     } catch (error) {
-      console.error('Cron: Error triggering scrapes:', error);
+      console.error('Cron: Error enriching with PDL:', error);
     }
 
     // Step 3: Run pending scoring (for new qualifications against existing profiles)
@@ -98,11 +98,11 @@ export default {
       });
     }
 
-    // Manual trigger for scraping unenriched profiles
-    if (url.pathname === '/trigger-scrape') {
+    // Manual trigger for PDL enrichment
+    if (url.pathname === '/trigger-pdl') {
       const serverClient = new ServerClient(env);
       try {
-        const result = await serverClient.triggerUnenrichedScrapes(50);
+        const result = await serverClient.enrichWithPDL(50);
         return new Response(JSON.stringify({ success: true, ...result }), {
           headers: { 'Content-Type': 'application/json' },
         });
